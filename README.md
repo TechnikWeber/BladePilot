@@ -76,7 +76,7 @@ Dark mode follows the system:
 
 Pick the file for your system from the [releases](https://github.com/TechnikWeber/BladePilot/releases).
 
-**Desktop app** (from version 0.2.0 on):
+**Desktop app:**
 
 | System | File |
 |---|---|

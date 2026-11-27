@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 – 2026-11-27
+
+The desktop app. Cutting on a real machine has still not been tested: send to the virtual
+plotter, and to a machine only on a hardware test day, with a pen on paper first.
 
 - **Desktop app** (Tauri 2, Svelte): a cutting mat with grid, rulers and cutting area; designs
   in their colours to move, turn, resize, mirror and duplicate, with snapping and undo; one
@@ -13,6 +16,8 @@
 - Jobs pause at the next lifted move, stop with the tool lifted and the mat moved out, and
   wait for the tool change between a pen and a blade pass. The command line asks for the
   tool change too.
+- The desktop app opens design files named on its command line; on Linux it offers itself for
+  SVG files in the file manager and installs the udev rule for USB access.
 - Release builds include the desktop app: AppImage, deb, rpm, Windows installer and macOS
   disk image.
 
