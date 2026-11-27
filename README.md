@@ -15,7 +15,8 @@
   <a href="#download"><b>Install</b></a> &nbsp;·&nbsp;
   <a href="docs/ROADMAP.md"><b>Roadmap</b></a> &nbsp;·&nbsp;
   <a href="docs/ARCHITECTURE.md"><b>How it works</b></a> &nbsp;·&nbsp;
-  <a href="docs/HARDWARE-DAY.md"><b>Hardware test day</b></a>
+  <a href="docs/HARDWARE-DAY.md"><b>Hardware test day</b></a> &nbsp;·&nbsp;
+  <a href="https://technikweber.github.io/2026/bladepilot-schneideplotter-unter-linux/"><b>Blog post (German)</b></a>
 </p>
 
 Cut on Silhouette Portrait and Cameo machines from Linux: open SVG and Silhouette Studio
