@@ -35,6 +35,8 @@ from a clone of this repository.
    ```
 
    Without the GitHub CLI, download the `.exe` from the releases page into `re\bin` instead.
+   For T7 also install the desktop app: `BladePilot-Desktop-…-windows-x64-setup.exe` from the
+   same release.
 
 ## Start the session
 
@@ -128,6 +130,10 @@ then `sudo modprobe usbmon`, look up the machine's bus with `lsusb` and capture 
 - Stop at the first unexpected movement and note what happened before trying again.
 
 ## Afterwards
+
+Code changes made on the Windows PC are committed and pushed as usual. The private material
+(`re\captures`, `re\studio`, `re\notes`) goes to the maintainer's laptop by USB stick or the
+NAS, into `~/BladePilot/re/`, never through git.
 
 The differences between the captures answer the open questions in [PROTOCOL.md](PROTOCOL.md)
 and turn into fixes and new golden tests. Facts learned from captures may also go upstream to
