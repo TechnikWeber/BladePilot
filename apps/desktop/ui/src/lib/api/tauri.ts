@@ -36,6 +36,8 @@ export const tauriBackend: Backend = {
   simulateJob: (job) => invoke('simulate_job', { job }),
   scanDevices: () => invoke('scan_devices'),
   deviceStatus: (bus, address) => invoke('device_status', { bus, address }),
+  scanBluetooth: () => invoke('scan_bluetooth'),
+  bluetoothStatus: (address) => invoke('bluetooth_status', { address }),
   virtualStatus: (machine) => invoke('virtual_status', { machine }),
   async startJob(job, target, onEvent) {
     const events = new Channel<JobEvent>();

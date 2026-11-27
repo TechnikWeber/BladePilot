@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 use bladepilot_sim::VirtualPlotter;
 use craft_plotter::gpgl::silhouette::{self, Status, Tool};
+
+pub mod bluetooth;
 use craft_plotter::{Command, Program};
 
 pub mod usb;
@@ -26,6 +28,8 @@ const CHUNK: usize = 4096;
 pub enum Error {
     #[error("USB: {0}")]
     Usb(String),
+    #[error("Bluetooth: {0}")]
+    Bluetooth(String),
     #[error("the machine did not answer")]
     NoReply,
     #[error("no material loaded: load the mat or the material and start again")]
@@ -103,6 +107,13 @@ pub enum Progress {
     Paused {
         before_pass: Option<usize>,
     },
+    /// The machine reports the wrong kind of tool for pass `before_pass` (a pen for a blade pass
+    /// or the other way round, or an empty holder). A [`Progress::Paused`] follows: once the job is
+    /// resumed it goes on without asking again, so a tool the machine does not recognise cannot
+    /// block it.
+    WrongTool {
+        before_pass: usize,
+    },
     /// The job goes on after a pause.
     Resumed,
     /// Everything is sent; the machine finishes the cut.
@@ -119,6 +130,10 @@ pub struct RunOptions {
     /// Passes before which the job pauses with the tool lifted, so the tool can be swapped
     /// (`bladepilot_job::Plan::tool_changes`). The first pass never pauses.
     pub pause_before: Vec<usize>,
+    /// Per pass: does it want a pen (`true`) or a blade? When given, the tool in holder 1 is
+    /// checked before the first pass and after every tool change. Leave it empty for the virtual
+    /// plotter, which always reports an AutoBlade.
+    pub pass_pens: Vec<bool>,
 }
 
 const RUNNING: u8 = 0;
@@ -290,6 +305,9 @@ impl<T: Transport> Session<T> {
         self.init()?;
         self.wait_ready(self.reply_timeout)?;
         progress(Progress::Ready);
+        if let Some(&pen) = options.pass_pens.first() {
+            self.check_tool(pen, 0, control, &mut progress)?;
+        }
         let mut run = Streaming { options, control, sent: 0, total: program.to_stream().len(), tool_down_at: None };
         let (before, after) = program.split_at_registration();
         let streamed = (|| {
@@ -332,6 +350,9 @@ impl<T: Transport> Session<T> {
                     }
                     run.control.pause();
                     self.hold(run.control, progress, Some(pass))?;
+                    if let Some(&pen) = run.options.pass_pens.get(pass) {
+                        self.check_tool(pen, pass, run.control, progress)?;
+                    }
                 }
                 progress(Progress::Pass { index: pass });
             }
@@ -371,6 +392,26 @@ impl<T: Transport> Session<T> {
         run.sent += chunk.len();
         chunk.clear();
         progress(Progress::Sending { sent: run.sent, total: run.total });
+        Ok(())
+    }
+
+    /// Asks which tool sits in holder 1 and, when it is the wrong kind for the pass, pauses until
+    /// the job is resumed. No reply, or a tool code BladePilot does not know, lets the job go on.
+    fn check_tool(&mut self, pen: bool, pass: usize, control: &JobControl, progress: &mut impl FnMut(Progress)) -> Result<(), Error> {
+        let Ok(tools) = self.tools() else {
+            return Ok(());
+        };
+        let right = match tools.first() {
+            Some(Some(Tool::Pen)) => pen,
+            Some(Some(Tool::Empty)) => false,
+            Some(Some(Tool::Error) | None) | None => true,
+            Some(Some(_)) => !pen,
+        };
+        if !right {
+            progress(Progress::WrongTool { before_pass: pass });
+            control.pause();
+            self.hold(control, progress, Some(pass))?;
+        }
         Ok(())
     }
 
@@ -489,7 +530,7 @@ mod tests {
         let blade = Operation { holder: 1, paths: vec![square(50.0)], ..Operation::default() };
         let second = silhouette::setup(&setup, &pen, true).len() + 5;
         let program = silhouette::encode(&setup, &Job { operations: vec![pen, blade], ..Job::default() }).unwrap();
-        (program, RunOptions { pass_starts: vec![0, second], pause_before: vec![1] })
+        (program, RunOptions { pass_starts: vec![0, second], pause_before: vec![1], pass_pens: vec![] })
     }
 
     #[test]

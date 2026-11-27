@@ -90,8 +90,8 @@
             {#each app.devices as d (deviceKey(d))}
               <label class="target" class:on={app.target === deviceKey(d)}>
                 <input type="radio" name="target" value={deviceKey(d)} bind:group={app.target} />
-                <span class="t-icon"><Icon name="usb" size={18} /></span>
-                <span class="t-text"><strong>{d.name}</strong><span class="warn">{t('send.usbHint')}</span></span>
+                <span class="t-icon"><Icon name={d.bluetooth ? 'bluetooth' : 'usb'} size={18} /></span>
+                <span class="t-text"><strong>{d.name}</strong><span class="warn">{t(d.bluetooth ? 'send.bluetoothHint' : 'send.usbHint')}</span></span>
               </label>
             {/each}
           </div>

@@ -91,6 +91,17 @@ async fn device_status(bus: String, address: u8) -> Result<DeviceStatus, ApiErro
 }
 
 #[tauri::command]
+async fn scan_bluetooth() -> Result<Vec<DeviceInfo>, ApiError> {
+    off_main(service::scan_bluetooth).await
+}
+
+#[tauri::command]
+async fn bluetooth_status(service: Shared<'_>, address: String) -> Result<DeviceStatus, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.bluetooth_status(&address)).await
+}
+
+#[tauri::command]
 async fn virtual_status(machine: String) -> Result<DeviceStatus, ApiError> {
     off_main(move || service::virtual_status(&machine)).await
 }
@@ -125,6 +136,8 @@ pub fn run() {
             simulate_job,
             scan_devices,
             device_status,
+            scan_bluetooth,
+            bluetooth_status,
             virtual_status,
             start_job,
             control_job,

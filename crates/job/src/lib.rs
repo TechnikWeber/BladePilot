@@ -28,7 +28,8 @@ pub struct CutSettings {
     pub force: Option<u32>,
     /// Speed in the machine's own steps; `None` leaves it to the machine.
     pub speed: Option<u32>,
-    /// Depth 0..=10 for a blade the machine sets itself (AutoBlade).
+    /// Depth 0..=10 for a blade the machine sets itself (AutoBlade). Never sent for a pen: the
+    /// machine would run its blade setting with the pen in the holder.
     pub depth: Option<u8>,
     /// How often every path is traced.
     pub passes: u8,
@@ -52,7 +53,7 @@ impl CutSettings {
             force: self.force,
             speed: self.speed,
             passes: self.passes,
-            depth: self.depth,
+            depth: if self.pen { None } else { self.depth },
             overcut_mm: self.overcut_mm,
             blade_offset_mm: self.blade_offset_mm,
             ..ToolSettings::default()
@@ -502,6 +503,18 @@ mod tests {
 
     fn colors(plan: &Plan) -> Vec<Option<Rgb>> {
         plan.passes.iter().map(|p| p.color).collect()
+    }
+
+    #[test]
+    fn a_pen_pass_never_sets_the_blade_depth() {
+        let design = Design { shapes: vec![sq(10.0, 10.0, 20.0, BLACK)], ..Design::default() };
+        let mut spec = JobSpec::new(bladepilot_machines::by_id("portrait4").unwrap());
+        spec.settings = CutSettings { pen: true, depth: Some(2), force: Some(15), ..CutSettings::default() };
+        let pen = encode(&plan(&design, &spec).unwrap()).unwrap().transcript();
+        assert!(!pen.iter().any(|c| c.starts_with("TF")), "no TF for a pen: {pen:?}");
+        spec.settings.pen = false;
+        let blade = encode(&plan(&design, &spec).unwrap()).unwrap().transcript();
+        assert!(blade.iter().any(|c| c == "TF2,1"), "the blade keeps its depth: {blade:?}");
     }
 
     #[test]
