@@ -43,9 +43,18 @@ Read [docs/CLEAN-ROOM.md](docs/CLEAN-ROOM.md) before touching protocol or file-f
 
 Progress and next steps are the checkboxes in [docs/ROADMAP.md](docs/ROADMAP.md); keep them up
 to date. No hardware is at hand during development: the maintainer owns a Portrait 3 or 4 (which
-one is still open) and has a Windows PC with Silhouette Studio for captures later. Everything is
-built and tested against the virtual plotter first; [docs/HARDWARE-DAY.md](docs/HARDWARE-DAY.md)
-is the plan for the first session with the real machine.
+one is still open). Everything is built and tested against the virtual plotter first.
+
+The hardware test day happens on the maintainer's Windows PC, in a clone of this repository,
+with Claude Code running the captures: follow [docs/HARDWARE-DAY.md](docs/HARDWARE-DAY.md)
+step by step there. Private material on that PC goes into `re\` as well.
+
+## Releases
+
+Tag `vX.Y.Z` (matching `version` in `Cargo.toml`, with a `CHANGELOG.md` section) and push the
+tag: `.github/workflows/release.yml` builds Linux (AppImage, deb, rpm, tar.gz for x86_64 and
+aarch64), Windows (exe, zip for x86_64 and arm64) and macOS (universal tar.gz) and publishes
+the release; 0.x versions are marked as pre-releases. Started by hand, the workflow only builds.
 
 ## Commands
 
