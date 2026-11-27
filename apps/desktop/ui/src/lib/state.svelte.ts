@@ -467,12 +467,21 @@ class AppState {
 
   duplicateSelected(): void {
     const item = this.selectedItem;
-    if (!item) return;
+    const box = item ? this.boxes[item.id] : null;
+    if (!item || !box) return;
     this.checkpoint();
-    const box = this.boxes[item.id];
-    const w = box ? box.x1 - box.x0 : 20;
-    const fitsRight = box && box.x1 + 5 + w <= this.area.w;
-    const copy: Item = { ...$state.snapshot(item), id: nextItemId++, cx: item.cx + (fitsRight ? w + 5 : 10), cy: item.cy + (fitsRight ? 0 : 10) };
+    // Next to the original where there is room: right, below, else a little offset.
+    const w = box.x1 - box.x0;
+    const h = box.y1 - box.y0;
+    const gap = 5;
+    const free = (dx: number, dy: number) => {
+      const b = { x0: box.x0 + dx, y0: box.y0 + dy, x1: box.x1 + dx, y1: box.y1 + dy };
+      const fits = b.x0 >= 0 && b.y0 >= 0 && b.x1 <= this.area.w && b.y1 <= this.area.h;
+      const clear = Object.values(this.boxes).every((o) => o.x1 <= b.x0 || o.x0 >= b.x1 || o.y1 <= b.y0 || o.y0 >= b.y1);
+      return fits && clear;
+    };
+    const [dx, dy] = [[w + gap, 0], [0, h + gap], [-(w + gap), 0], [0, -(h + gap)]].find(([x, y]) => free(x, y)) ?? [10, 10];
+    const copy: Item = { ...$state.snapshot(item), id: nextItemId++, cx: item.cx + dx, cy: item.cy + dy };
     this.items.push(copy);
     this.selected = copy.id;
   }

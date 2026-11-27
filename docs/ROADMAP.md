@@ -40,12 +40,18 @@ the virtual plotter first, then checked against the real machine on a
 
 ## Phase 3: desktop app
 
-- [ ] Tauri 2 app: Rust core, web front end
-- [ ] Mat view: place, move, rotate, scale, mirror, duplicate; snap to the mat
-- [ ] Colour list: material, tool and settings per colour, skip a colour, pass order by drag
-- [ ] Send dialog with live machine status, progress, pause and cancel
-- [ ] English and German, following the system language
-- [ ] AppImage and RPM built on GitHub Actions for tagged releases
+- [x] Tauri 2 app: Rust core, web front end (Svelte), long jobs off the UI thread
+- [x] Mat view: place, move, rotate, scale, mirror, duplicate; snap to the mat; undo
+- [x] Colour list: tool and settings per colour, skip a colour, pass order by drag, pauses
+      between passes and for tool changes
+- [x] Animated preview of the cutting order from the virtual plotter
+- [x] Send dialog with machine status, progress, pause, stop and tool changes
+- [x] English and German, light and dark, following the system
+- [x] Mock backend: the front end runs in a browser, for screenshots and a later web demo
+- [ ] Bundles on GitHub Actions for tagged releases: AppImage, deb, rpm, Windows installer, dmg
+      (written, waits for the first desktop release)
+- [ ] Open files from the file manager (file associations) and remember the last session
+- [ ] Web demo on GitHub Pages: the front end with the planner compiled to WebAssembly
 
 ## Phase 4: print and cut
 
@@ -62,7 +68,7 @@ the virtual plotter first, then checked against the real machine on a
 
 ## Later
 
-- [ ] Material profiles with a test cut and per-machine corrections
+- [ ] Material profiles with a test cut and per-machine corrections, chosen per colour
 - [ ] Long jobs on roll media without a mat, tiled when longer than the machine allows
 - [ ] Inkscape extension "Send to BladePilot"
 - [ ] Bluetooth
@@ -83,12 +89,12 @@ for everyone:
 | Long cuts fail | inkscape-silhouette #295, #216 | Later, roll media |
 | Tool settings stored with the design | inkscape-silhouette #323 | Phase 2 and 3 |
 | Blade offset for other blades | inkscape-silhouette #285 | done: `--blade-offset` |
-| Cut in a chosen order, pause between passes | inkscape-silhouette #283, #328 | Phase 3 |
-| UI freezes while cutting | inkscape-silhouette #111 | Phase 3: cutting runs off the UI thread |
+| Cut in a chosen order, pause between passes | inkscape-silhouette #283, #328 | done: manual pass order, pauses |
+| UI freezes while cutting | inkscape-silhouette #111 | done: the job runs on its own thread |
 | Installing the USB backend | inkscape-silhouette #349, #353, #30 | nusb needs no libusb; AppImage/RPM |
 | Open `.studio` / `.studio3` | cuthulhu #347 | done for outlines; Phase 2 |
 | Material-first profiles, test cut | cuthulhu #310 | Later |
-| Pause, resume, retry a pass | cuthulhu #306 | Phase 3 |
+| Pause, resume, retry a pass | cuthulhu #306 | done: pause and resume; a pass is retried by leaving the others out |
 
 ## Out of scope
 

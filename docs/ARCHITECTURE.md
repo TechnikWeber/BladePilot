@@ -18,6 +18,26 @@
 | `bladepilot-device` | The `Transport` trait and the `Session` that runs a job: initialise, wait until ready, stream, wait for marks, wait until done. A `JobControl` pauses (at the next lifted move), resumes and stops (lift, park) a job from another thread, and the session pauses by itself before a pass that needs another tool. Transports: the virtual plotter; USB through nusb on Linux and macOS; on Windows the USB printer class driver (`usbprint.sys`), which Silhouette Studio uses too, so no driver has to be replaced. |
 | `bladepilot-capture` | Reads USB captures (pcap, pcapng) from USBPcap and usbmon, finds the machine and splits its traffic into commands and replies, for `bladepilot replay`. |
 | `bladepilot-cli` | The `bladepilot` command line. |
+| `bladepilot-desktop` | The desktop app (`apps/desktop/src-tauri`): Tauri commands over the crates above. `service.rs` does the work without Tauri (imports, plans, the virtual plotter run behind the preview, jobs on their own thread), `model.rs` holds the JSON types the front end mirrors. |
+
+## Desktop app
+
+```text
+ ui/ (Svelte 5, TypeScript) ──invoke──► src-tauri/lib.rs ──► service.rs ──► job, sim, device
+   │  state.svelte.ts          ◄─channel── job thread: progress, pauses, end
+   └─ api/mock: the same calls answered in the browser (screenshots, web demo)
+```
+
+- **The front end owns the placement, Rust owns the geometry.** Imported designs stay in the
+  Rust process; the front end gets their outlines as path data, a convex hull and the colours,
+  and describes a job as items with a transform each plus the colour list. Every plan,
+  preview and job is computed by the same crates the command line uses.
+- **Nothing slow on the main thread.** Imports, plans and simulations run on Tauri's blocking
+  pool; a job runs on a thread of its own and reports through a channel. Pause and stop reach
+  it through a `JobControl`.
+- **A mock backend in the browser.** The same build runs without Tauri: a small TypeScript
+  planner stands in for Rust. Its machine table and demo design are written by the desktop
+  crate's tests, so they cannot drift from what the app sends.
 
 ## Decisions
 
@@ -54,3 +74,6 @@
 | kurbo | Apache-2.0 OR MIT | Curves, flattening |
 | nusb | Apache-2.0 OR MIT | USB without libusb |
 | clap, anyhow, thiserror | Apache-2.0 OR MIT | Command line, errors |
+| tauri, tauri-plugin-dialog | Apache-2.0 OR MIT | Desktop window, file dialogs |
+| serde, serde_json, sys-locale | Apache-2.0 OR MIT | JSON for the front end, system language |
+| Svelte (built with Vite and TypeScript) | MIT | Desktop front end |

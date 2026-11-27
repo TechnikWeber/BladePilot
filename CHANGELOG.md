@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **Desktop app** (Tauri 2, Svelte): a cutting mat with grid, rulers and cutting area; designs
+  in their colours to move, turn, resize, mirror and duplicate, with snapping and undo; one
+  pass per colour with tool, force, speed, depth and repeats; skip a colour, drag the passes
+  into your own order; an animated preview of what the virtual plotter cuts; a send dialog
+  with progress, pause, stop and tool changes. Light and dark, English and German, following
+  the system.
+- The planner takes a manual pass order and colours to leave out, and warns when a manual
+  order cuts a piece loose before its inside is done.
+- Jobs pause at the next lifted move, stop with the tool lifted and the mat moved out, and
+  wait for the tool change between a pen and a blade pass. The command line asks for the
+  tool change too.
+- Release builds include the desktop app: AppImage, deb, rpm, Windows installer and macOS
+  disk image.
+
 ## 0.1.0 – 2026-11-27
 
 First preview, for trying BladePilot without a machine. Cutting on a real machine has not been

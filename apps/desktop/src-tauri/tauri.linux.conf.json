@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "bladepilot-desktop",
+  "bundle": {
+    "linux": {
+      "deb": { "desktopTemplate": "linux/bladepilot-desktop.desktop" },
+      "rpm": { "desktopTemplate": "linux/bladepilot-desktop.desktop" }
+    }
+  }
+}

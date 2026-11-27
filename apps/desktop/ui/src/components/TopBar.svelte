@@ -64,11 +64,6 @@
     padding: 0 12px 0 14px;
     background: var(--panel);
     border-bottom: 1px solid var(--border);
-    -webkit-app-region: drag;
-  }
-
-  .top :global(button) {
-    -webkit-app-region: no-drag;
   }
 
   .brand {

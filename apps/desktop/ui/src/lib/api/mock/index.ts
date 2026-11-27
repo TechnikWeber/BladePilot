@@ -49,6 +49,9 @@ export const mockBackend: Backend = {
   async machines() {
     return machines;
   },
+  async startupFiles() {
+    return [];
+  },
   async pickDesigns() {
     const out: DesignInfo[] = [];
     for (const file of await pickFiles()) out.push(await this.openFile(file));

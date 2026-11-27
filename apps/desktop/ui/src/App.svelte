@@ -31,6 +31,7 @@
         (over) => (app.dropping = over),
       );
       if (!backend.mock) void app.scan();
+      for (const path of await backend.startupFiles()) await app.open(async () => [await backend.openPath(path)], path);
       await screenshotState(params);
     })();
     return () => unlisten?.();

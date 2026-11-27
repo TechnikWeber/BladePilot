@@ -33,8 +33,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
-    "category": "Graphics",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "GraphicsAndDesign",
     "shortDescription": "Cutting software for Silhouette Portrait and Cameo machines",
     "longDescription": "Open SVG and Silhouette Studio files, place them on the mat and cut them on Silhouette Portrait and Cameo machines, or watch the virtual plotter cut them first.",
     "publisher": "TechnikWeber",
@@ -54,6 +60,15 @@
           "/usr/lib/udev/rules.d/70-bladepilot-desktop.rules": "../../../packaging/linux/70-bladepilot.rules"
         },
         "postInstallScript": "../../../packaging/linux/postinstall.sh"
+      }
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
       }
     }
   }

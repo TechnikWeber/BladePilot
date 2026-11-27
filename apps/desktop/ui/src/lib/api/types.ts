@@ -171,6 +171,8 @@ export interface Backend {
   readonly mock: boolean;
   appInfo(): Promise<AppInfo>;
   machines(): Promise<MachineInfo[]>;
+  /** Design files named on the command line, to open at start. */
+  startupFiles(): Promise<string[]>;
   /** Lets the user pick design files and opens them. */
   pickDesigns(): Promise<DesignInfo[]>;
   openPath(path: string): Promise<DesignInfo>;

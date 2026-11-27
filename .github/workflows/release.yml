@@ -1,7 +1,8 @@
 name: release
 
-# A tag v* builds every package and publishes a GitHub release. Started by hand, it only builds
-# and keeps the files as workflow artifacts, to test the packaging.
+# A tag v* builds every package and publishes a GitHub release: the command line (static, for
+# every system) and the desktop app (Tauri bundles). Started by hand, it only builds and keeps the
+# files as workflow artifacts, to test the packaging.
 on:
   push:
     tags: ["v*"]
@@ -133,9 +134,77 @@ jobs:
           name: macos-universal
           path: dist/out/*
 
+  desktop:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux bundles are built on the oldest runner so that they run on older distributions too.
+          - { runner: ubuntu-22.04, platform: linux, arch: x86_64, bundles: "appimage,deb,rpm" }
+          - { runner: ubuntu-22.04-arm, platform: linux, arch: aarch64, bundles: "appimage,deb,rpm" }
+          - { runner: windows-latest, platform: windows, arch: x64, bundles: "nsis,msi" }
+          - { runner: macos-latest, platform: macos, arch: universal, bundles: "dmg", target: universal-apple-darwin }
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos' && 'aarch64-apple-darwin, x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/ui/package-lock.json
+      - name: System libraries (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libwebkit2gtk-4.1-dev libxdo-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2 file
+      - name: Front end
+        working-directory: apps/desktop/ui
+        run: npm ci
+      - name: Build the bundles
+        working-directory: apps/desktop/ui
+        shell: bash
+        run: npm run tauri -- build --bundles ${{ matrix.bundles }} ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+      - name: Collect under release names
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bundle=target/${{ matrix.target || '' }}/release/bundle
+          bundle=${bundle//\/\//\/}
+          out=dist/out
+          mkdir -p "$out"
+          name="BladePilot-Desktop-$VERSION"
+          case "${{ matrix.platform }}" in
+            linux)
+              deb_arch=$([ "${{ matrix.arch }}" = x86_64 ] && echo amd64 || echo arm64)
+              for f in "$bundle"/appimage/*.AppImage; do cp "$f" "$out/$name-${{ matrix.arch }}.AppImage"; done
+              for f in "$bundle"/deb/*.deb; do cp "$f" "$out/bladepilot-desktop_${VERSION}_${deb_arch}.deb"; done
+              for f in "$bundle"/rpm/*.rpm; do cp "$f" "$out/bladepilot-desktop-$VERSION-1.${{ matrix.arch }}.rpm"; done ;;
+            windows)
+              for f in "$bundle"/nsis/*-setup.exe; do cp "$f" "$out/$name-windows-x64-setup.exe"; done
+              for f in "$bundle"/msi/*.msi; do cp "$f" "$out/$name-windows-x64.msi"; done ;;
+            macos)
+              for f in "$bundle"/dmg/*.dmg; do cp "$f" "$out/$name-macos-universal.dmg"; done ;;
+          esac
+          ls -la "$out"
+          test -n "$(ls "$out")"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/out/*
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [version, linux, windows, macos]
+    needs: [version, linux, windows, macos, desktop]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}

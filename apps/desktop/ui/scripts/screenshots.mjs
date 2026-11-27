@@ -37,7 +37,6 @@ const shots = [
   ['desktop-dark.png', '?demo&select&lang=en&theme=dark'],
   ['desktop-preview.png', '?demo&preview=0.62&lang=en&theme=light'],
   ['desktop-send.png', '?demo&send=change&lang=en&theme=light'],
-  ['desktop-de.png', '?demo&select&lang=de&theme=light'],
 ];
 
 for (const [name, query] of shots) {
@@ -65,6 +64,9 @@ for (const [name, query] of shots) {
   } finally {
     await rm(profile, { recursive: true, force: true });
   }
+  // 256 colours look the same here and take a third of the space; skipped without ImageMagick.
+  const file = join(out, name);
+  await promisify(execFile)('magick', [file, '-strip', '-dither', 'None', '-colors', '256', '-define', 'png:compression-level=9', `PNG8:${file}`]).catch(() => {});
   console.log(`wrote docs/images/${name}`);
 }
 

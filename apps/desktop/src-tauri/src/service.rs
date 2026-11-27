@@ -528,6 +528,15 @@ impl Transport for Paced {
     }
 }
 
+/// The arguments that name existing files with a design extension.
+pub fn startup_files(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std::path::PathBuf> {
+    const EXTENSIONS: [&str; 4] = ["svg", "svgz", "studio", "studio3"];
+    args.map(std::path::PathBuf::from)
+        .filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())))
+        .filter(|p| p.is_file())
+        .collect()
+}
+
 /// The cutting machines on USB.
 pub fn scan_devices() -> Result<Vec<DeviceInfo>, ApiError> {
     Ok(usb::scan()?
@@ -827,6 +836,15 @@ mod tests {
         let design = Service::new().import_design("demo.svg", &demo).unwrap();
         assert_eq!(design.colors.len(), 3, "black, red and blue");
         check_file(&format!("{ui}/mock/demo.json"), &(serde_json::to_string_pretty(&design).unwrap() + "\n"));
+    }
+
+    #[test]
+    fn only_design_files_on_the_command_line_are_opened() {
+        let dir = format!("{}/../../../hardware-tests", env!("CARGO_MANIFEST_DIR"));
+        let args = [format!("{dir}/T1-square.svg"), "--some-flag".to_string(), format!("{dir}/missing.svg"), format!("{dir}/../README.md")];
+        let files = startup_files(args.into_iter().map(std::ffi::OsString::from));
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("T1-square.svg"));
     }
 
     #[test]

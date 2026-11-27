@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=BladePilot
+GenericName=Cutting machine software
+Comment=Cut SVG and Silhouette Studio designs on Silhouette Portrait and Cameo machines
+Exec={{exec}} %F
+Icon={{icon}}
+StartupWMClass={{exec}}
+Terminal=false
+Categories=Graphics;VectorGraphics;Utility;
+Keywords=cutter;plotter;vinyl;silhouette;cameo;portrait;svg;
+MimeType=image/svg+xml;image/svg+xml-compressed;

@@ -15,6 +15,7 @@ export const tauriBackend: Backend = {
   mock: false,
   appInfo: () => invoke('app_info'),
   machines: () => invoke('machines'),
+  startupFiles: () => invoke('startup_files'),
   async pickDesigns() {
     const picked = await open({
       multiple: true,

@@ -7,6 +7,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::State;
 use tauri::ipc::Channel;
@@ -32,6 +33,17 @@ fn app_info() -> AppInfo {
 #[tauri::command]
 fn machines() -> Vec<MachineInfo> {
     service::machines()
+}
+
+/// Design files named on the command line (`bladepilot-desktop a.svg b.studio3`, or "Open with"
+/// in a file manager), to open at start: once, not again when the page reloads.
+#[tauri::command]
+fn startup_files() -> Vec<PathBuf> {
+    static TAKEN: AtomicBool = AtomicBool::new(false);
+    if TAKEN.swap(true, Ordering::SeqCst) {
+        return Vec::new();
+    }
+    service::startup_files(std::env::args_os().skip(1))
 }
 
 #[tauri::command]
@@ -99,6 +111,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_info,
             machines,
+            startup_files,
             open_design,
             import_design,
             forget_design,
