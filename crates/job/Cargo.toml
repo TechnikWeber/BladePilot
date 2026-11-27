@@ -1,0 +1,19 @@
+[package]
+name = "bladepilot-job"
+description = "Turns a placed design into cutting passes and the machine program."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bladepilot-machines = { workspace = true }
+bladepilot-design = { workspace = true }
+craft-plotter = { workspace = true }
+kurbo = { workspace = true }
+thiserror = { workspace = true }

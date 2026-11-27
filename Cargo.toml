@@ -1,0 +1,41 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+authors = ["Philipp Weber"]
+repository = "https://github.com/TechnikWeber/BladePilot"
+
+[workspace.dependencies]
+# Building blocks from the Craft Apps (MIT OR Apache-2.0), pinned to one revision.
+craft-plotter = { git = "https://github.com/storytold/craft-libs", rev = "d84096ce140d5da629cb968ffd58dd46ce194a8d" }
+craft-silhouette-studio = { git = "https://github.com/storytold/craft-libs", rev = "d84096ce140d5da629cb968ffd58dd46ce194a8d" }
+
+kurbo = "0.13"
+usvg = "0.50"
+nusb = "0.2"
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4.6", features = ["derive"] }
+
+bladepilot-machines = { path = "crates/machines" }
+bladepilot-design = { path = "crates/design" }
+bladepilot-job = { path = "crates/job" }
+bladepilot-sim = { path = "crates/sim" }
+bladepilot-device = { path = "crates/device" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,19 @@
+[package]
+name = "bladepilot-device"
+description = "Talks to cutting machines: transports (USB, virtual plotter) and the job protocol."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bladepilot-machines = { workspace = true }
+bladepilot-sim = { workspace = true }
+craft-plotter = { workspace = true }
+nusb = { workspace = true }
+thiserror = { workspace = true }

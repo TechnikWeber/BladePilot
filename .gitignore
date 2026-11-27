@@ -1,0 +1,23 @@
+# Build output
+/target/
+**/node_modules/
+/apps/desktop/dist/
+
+# Private reverse-engineering workspace: extracted vendor software, analysis
+# projects, notes and USB captures of vendor software. Never commit it.
+/re/
+
+# USB captures stay private unless they are our own test fixtures
+*.pcap
+*.pcapng
+!/crates/*/tests/fixtures/*.pcapng
+
+# Simulator previews and dry-run output
+/out/
+*.preview.svg
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hardware test T1/T2: a 20 x 20 mm square at X 10, Y 10 mm. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="203.2mm" height="304.8mm" viewBox="0 0 203.2 304.8">
+  <rect x="10" y="10" width="20" height="20" fill="none" stroke="#000000" stroke-width="0.25"/>
+</svg>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A label: an outer square with a circle inside, a group transform, two colours and a
+     hidden shape that must not be cut. Millimetre user units. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="60mm" viewBox="0 0 100 60">
+  <g transform="translate(5 5)">
+    <rect x="0" y="0" width="40" height="40" fill="none" stroke="#000000" stroke-width="0.25"/>
+    <circle cx="20" cy="20" r="10" fill="none" stroke="#0000ff" stroke-width="0.25"/>
+  </g>
+  <path d="M 60 10 L 90 10 L 75 40 Z" fill="#00ff00"/>
+  <rect x="60" y="45" width="10" height="10" fill="none" stroke="#000000" visibility="hidden"/>
+</svg>

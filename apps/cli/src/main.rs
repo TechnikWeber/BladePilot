@@ -1,0 +1,305 @@
+//! `bladepilot`: the command-line front end.
+
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use anyhow::{Context, Result, bail};
+use bladepilot_design::{Design, Rgb};
+use bladepilot_device::{Progress, Session, SimTransport, usb};
+use bladepilot_job::{CutSettings, Grouping, JobSpec, Plan};
+use bladepilot_machines::{Machine, Support};
+use bladepilot_sim::{Config, VirtualPlotter};
+use clap::{Args, Parser, Subcommand};
+use craft_plotter::gpgl::silhouette::Mat;
+
+#[derive(Parser)]
+#[command(name = "bladepilot", version, about = "Cutting software for Silhouette Portrait and Cameo machines")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// List the machines BladePilot knows
+    Machines,
+    /// List cutting machines connected over USB
+    Devices,
+    /// Show what a design file contains
+    Inspect {
+        /// SVG, .studio or .studio3 file
+        file: PathBuf,
+    },
+    /// Plan a design, then cut it, draw it with the virtual plotter or print the program
+    Cut(CutArgs),
+}
+
+#[derive(Args)]
+struct CutArgs {
+    /// SVG, .studio or .studio3 file
+    file: PathBuf,
+    /// Machine id, see `bladepilot machines`
+    #[arg(long, short, default_value = "portrait3")]
+    machine: String,
+    /// Mat: 8x12, 8.5x12, 12x12, 12x24, 15x15, 24x24 or none (default: the machine's usual mat)
+    #[arg(long)]
+    mat: Option<String>,
+    /// Where the page's top-left corner lands on the mat, in mm: X,Y
+    #[arg(long, value_parser = parse_pair, default_value = "0,0", allow_hyphen_values = true)]
+    offset: (f64, f64),
+    /// One pass per colour instead of one pass for everything
+    #[arg(long)]
+    by_color: bool,
+    /// Force in the machine's steps (default: the machine's setting)
+    #[arg(long)]
+    force: Option<u32>,
+    /// Speed in the machine's steps (default: the machine's setting)
+    #[arg(long)]
+    speed: Option<u32>,
+    /// AutoBlade depth 0-10
+    #[arg(long, value_parser = clap::value_parser!(u8).range(0..=10))]
+    depth: Option<u8>,
+    /// How often every path is cut
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=10))]
+    passes: u8,
+    /// Draw with a pen instead of cutting with a blade
+    #[arg(long)]
+    pen: bool,
+    /// With --by-color: shapes of this colour are drawn with a pen (repeatable), e.g. "#ff0000"
+    #[arg(long, value_name = "HEX", requires = "by_color")]
+    pen_color: Vec<String>,
+    /// Run the blade this far past sharp corners, mm (0-2)
+    #[arg(long, default_value_t = 0.0)]
+    overcut: f64,
+    /// Blade swivel offset, mm
+    #[arg(long, default_value_t = 0.9)]
+    blade_offset: f64,
+    /// Print the program instead of cutting
+    #[arg(long, conflicts_with = "simulate")]
+    dry_run: bool,
+    /// With --dry-run: write the exact bytes to this file instead of printing commands
+    #[arg(long, requires = "dry_run", value_name = "FILE")]
+    bytes: Option<PathBuf>,
+    /// Run the job on the virtual plotter and draw it into this SVG file
+    #[arg(long, value_name = "SVG")]
+    simulate: Option<PathBuf>,
+    /// Send to a real machine over USB, which has not been tested on hardware yet
+    #[arg(long, conflicts_with_all = ["dry_run", "simulate"])]
+    experimental_usb: bool,
+}
+
+fn parse_pair(s: &str) -> Result<(f64, f64), String> {
+    let (x, y) = s.split_once(',').ok_or("expected X,Y in mm, e.g. 10,15")?;
+    let num = |v: &str| v.trim().parse::<f64>().ok().filter(|v| v.is_finite()).ok_or(format!("`{v}` is not a number"));
+    Ok((num(x)?, num(y)?))
+}
+
+fn main() -> ExitCode {
+    match run(Cli::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        // `bladepilot machines | head` closes the pipe early: not an error.
+        Err(e) if e.chain().any(|c| c.downcast_ref::<std::io::Error>().is_some_and(|io| io.kind() == std::io::ErrorKind::BrokenPipe)) => {
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run(cli: Cli) -> Result<()> {
+    match cli.command {
+        Command::Machines => machines(),
+        Command::Devices => devices(),
+        Command::Inspect { file } => inspect(&file),
+        Command::Cut(args) => cut(&args),
+    }
+}
+
+fn machines() -> Result<()> {
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{:<16} {:<32} {:<10} {:>7}  {:<28} SUPPORT", "ID", "NAME", "USB", "WIDTH", "MATS")?;
+    for m in bladepilot_machines::all() {
+        let mats = m.mats.iter().map(|mat| mat.id()).collect::<Vec<_>>().join(", ");
+        let support = match m.support {
+            Support::Target => "target",
+            Support::Untested => "untested",
+        };
+        writeln!(out, "{:<16} {:<32} {:04x}:{:04x} {:>4.0} mm  {:<28} {support}", m.id, m.name, m.vendor_id, m.product_id, m.cut_width_mm, mats)?;
+    }
+    Ok(())
+}
+
+fn devices() -> Result<()> {
+    let found = usb::scan().context("scanning USB")?;
+    let mut out = std::io::stdout().lock();
+    if found.is_empty() {
+        writeln!(out, "No cutting machine found on USB.")?;
+        return Ok(());
+    }
+    for f in found {
+        let name = f.machine.map_or("unknown Graphtec device", |m| m.name);
+        writeln!(
+            out,
+            "{name}  ({:04x}:{:04x}, bus {} address {}{})",
+            f.vendor_id,
+            f.product_id,
+            f.bus,
+            f.address,
+            f.product.map(|p| format!(", reports \"{p}\"")).unwrap_or_default()
+        )?;
+    }
+    Ok(())
+}
+
+fn load(file: &Path) -> Result<Design> {
+    let bytes = std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    let name = file.file_name().and_then(|n| n.to_str());
+    bladepilot_design::import(&bytes, name).with_context(|| format!("opening {}", file.display()))
+}
+
+fn color_name(c: Option<Rgb>) -> String {
+    c.map_or_else(|| "no colour".to_string(), Rgb::hex)
+}
+
+fn inspect(file: &Path) -> Result<()> {
+    let design = load(file)?;
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{}: {}", file.display(), design.format.name())?;
+    if let Some((w, h)) = design.page_mm {
+        writeln!(out, "page      {w:.1} × {h:.1} mm")?;
+    }
+    writeln!(out, "shapes    {}", design.shapes.len())?;
+    if let Some(bb) = design.bbox() {
+        writeln!(out, "extent    {:.1} × {:.1} mm, from ({:.1}, {:.1})", bb.width(), bb.height(), bb.x0, bb.y0)?;
+    }
+    for c in design.cut_colors() {
+        let n = design.shapes.iter().filter(|s| s.cut_color() == c).count();
+        writeln!(out, "colour    {:<10} {n} shape(s)", color_name(c))?;
+    }
+    for w in &design.warnings {
+        writeln!(out, "note      {w}")?;
+    }
+    Ok(())
+}
+
+fn spec_for(args: &CutArgs) -> Result<JobSpec> {
+    let machine: &'static Machine =
+        bladepilot_machines::by_id(&args.machine).with_context(|| format!("unknown machine `{}`; `bladepilot machines` lists them", args.machine))?;
+    let mut spec = JobSpec::new(machine);
+    if let Some(mat) = &args.mat {
+        spec.mat = Mat::parse(mat).with_context(|| format!("unknown mat `{mat}`"))?;
+    }
+    spec.offset_mm = args.offset;
+    spec.grouping = if args.by_color { Grouping::ByColor } else { Grouping::Single };
+    spec.settings = CutSettings {
+        force: args.force,
+        speed: args.speed,
+        depth: args.depth,
+        passes: args.passes,
+        pen: args.pen,
+        overcut_mm: args.overcut,
+        blade_offset_mm: args.blade_offset,
+    };
+    for hex in &args.pen_color {
+        let color = Rgb::parse(hex).with_context(|| format!("`{hex}` is not a colour like #ff0000"))?;
+        spec.color_settings.insert(color, CutSettings { pen: true, ..spec.settings });
+    }
+    Ok(spec)
+}
+
+fn print_plan(plan: &Plan) {
+    let (down, right) = plan.area_mm;
+    eprintln!("machine   {} on the {} mat (cutting area {right:.1} × {down:.1} mm)", plan.machine.name, plan.mat.id());
+    for (i, pass) in plan.passes.iter().enumerate() {
+        let s = &pass.settings;
+        let fmt = |v: Option<u32>| v.map_or_else(|| "machine".to_string(), |v| v.to_string());
+        eprintln!(
+            "pass {}    {:<10} {} path(s), {}, force {}, speed {}, depth {}, {}×",
+            i + 1,
+            color_name(pass.color),
+            pass.paths.len(),
+            if s.pen { "pen" } else { "blade" },
+            fmt(s.force),
+            fmt(s.speed),
+            s.depth.map_or_else(|| "machine".to_string(), |d| d.to_string()),
+            s.passes
+        );
+    }
+    eprintln!("length    {:.0} mm cut, {:.0} mm travel between cuts", plan.cut_length_mm(), plan.travel_length_mm());
+}
+
+fn cut(args: &CutArgs) -> Result<()> {
+    let design = load(&args.file)?;
+    for w in &design.warnings {
+        eprintln!("note      {w}");
+    }
+    let spec = spec_for(args)?;
+    let plan = bladepilot_job::plan(&design, &spec)?;
+    print_plan(&plan);
+    let program = bladepilot_job::encode(&plan)?;
+
+    if args.dry_run {
+        match &args.bytes {
+            Some(path) => {
+                std::fs::write(path, program.to_stream()).with_context(|| format!("writing {}", path.display()))?;
+                eprintln!("wrote     {} ({} bytes)", path.display(), program.to_stream().len());
+            }
+            None => {
+                let mut out = std::io::stdout().lock();
+                for line in program.transcript() {
+                    writeln!(out, "{line}")?;
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(svg) = &args.simulate {
+        let plotter = VirtualPlotter::new(Config::new(plan.machine));
+        let mut session = Session::instant(SimTransport::new(plotter));
+        session.run(&program, |_| {}).context("virtual plotter")?;
+        let plotter = session.into_transport().plotter;
+        std::fs::write(svg, plotter.to_svg()).with_context(|| format!("writing {}", svg.display()))?;
+        let stats = plotter.stats();
+        eprintln!(
+            "simulated {} commands, {} cut(s), {:.0} mm cut, {:.0} mm travel with the final park move, {} warning(s)",
+            stats.commands, stats.cuts, stats.cut_length_mm, stats.travel_length_mm, stats.warnings
+        );
+        for w in plotter.warnings() {
+            eprintln!("warning   {}", w.message);
+        }
+        eprintln!("drawn     {}", svg.display());
+        return Ok(());
+    }
+
+    if !args.experimental_usb {
+        bail!("cutting on a real machine is not released yet: use --dry-run or --simulate FILE.svg (or --experimental-usb on hardware test days)");
+    }
+    send_usb(plan.machine, &program)
+}
+
+fn send_usb(machine: &'static Machine, program: &craft_plotter::Program) -> Result<()> {
+    let found = usb::scan().context("scanning USB")?;
+    let target =
+        found.iter().find(|f| f.machine.is_some_and(|m| m.id == machine.id)).or_else(|| found.first()).context("no cutting machine found on USB")?;
+    if target.machine.is_none_or(|m| m.id != machine.id) {
+        bail!("the connected machine ({:04x}:{:04x}) is not a {}: pass the right --machine", target.vendor_id, target.product_id, machine.name);
+    }
+    let transport = usb::UsbTransport::open(target).context("opening the machine")?;
+    let mut session = Session::new(transport);
+    session.init()?;
+    eprintln!("connected {}", session.version().unwrap_or_else(|_| "(no version reply)".to_string()));
+    session.run(program, |p| match p {
+        Progress::Ready => eprintln!("ready"),
+        Progress::Sending { sent, total } => {
+            eprint!("\rsending   {:>3} %", sent * 100 / total.max(1))
+        }
+        Progress::SearchingMarks => eprintln!("\nsearching for the registration marks"),
+        Progress::Finishing => eprintln!("\nfinishing"),
+        Progress::Done => eprintln!("done"),
+    })?;
+    Ok(())
+}

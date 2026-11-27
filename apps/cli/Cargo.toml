@@ -1,0 +1,26 @@
+[package]
+name = "bladepilot-cli"
+description = "Command-line front end of BladePilot."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bladepilot-machines = { workspace = true }
+bladepilot-design = { workspace = true }
+bladepilot-job = { workspace = true }
+bladepilot-sim = { workspace = true }
+bladepilot-device = { workspace = true }
+craft-plotter = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+
+[[bin]]
+name = "bladepilot"
+path = "src/main.rs"

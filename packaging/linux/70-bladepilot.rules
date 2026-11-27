@@ -1,0 +1,7 @@
+# BladePilot: lets the logged-in user talk to Silhouette cutting machines over USB.
+#   sudo cp 70-bladepilot.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+# Then unplug and replug the machine.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0b4d", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="3844", ATTR{idProduct}=="0001", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="3844", ATTR{idProduct}=="0002", TAG+="uaccess"
