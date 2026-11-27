@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- BladePilot's own captures of the Portrait 4 are published as test data (USB as pcap, Bluetooth
+  as a text transcript), with tests that replay them; PROTOCOL.md describes the vendor software
+  only roughly.
+
 ## 0.4.0 – 2026-11-27
 
 After the first hardware test day with a Portrait 4: sending over USB works, and Bluetooth is new.

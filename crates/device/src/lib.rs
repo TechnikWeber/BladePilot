@@ -674,4 +674,65 @@ mod tests {
         assert!(matches!(s.run(&program(Some(reg)), |_| {}), Err(Error::MarksNotFound)));
         assert_eq!(s.transport().plotter.cuts().count(), 0, "nothing is cut without the marks");
     }
+
+    /// Plays back the machine's replies from a real Bluetooth session (fixtures): each query gets
+    /// the next reply recorded for it.
+    type Replies = Vec<(Vec<u8>, std::collections::VecDeque<Vec<u8>>)>;
+
+    struct Recorded {
+        replies: Replies,
+        pending: Vec<u8>,
+    }
+
+    impl Recorded {
+        fn from_transcript(text: &str) -> Recorded {
+            let hex = |h: &str| (0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap()).collect::<Vec<u8>>();
+            let mut replies: Replies = Vec::new();
+            let mut last_query = Vec::new();
+            for line in text.lines().filter(|l| !l.starts_with('#')) {
+                let mut parts = line.split_whitespace();
+                let (_, dir, data) = (parts.next(), parts.next().unwrap(), hex(parts.next().unwrap()));
+                if dir == ">" {
+                    last_query = data;
+                } else if let Some(entry) = replies.iter_mut().find(|(q, _)| *q == last_query) {
+                    entry.1.push_back(data);
+                } else {
+                    replies.push((last_query.clone(), std::collections::VecDeque::from([data])));
+                }
+            }
+            Recorded { replies, pending: Vec::new() }
+        }
+
+        fn left(&self, query: &[u8]) -> usize {
+            self.replies.iter().find(|(q, _)| q == query).map_or(0, |(_, r)| r.len())
+        }
+    }
+
+    impl Transport for Recorded {
+        fn write_all(&mut self, bytes: &[u8]) -> Result<(), Error> {
+            if let Some((_, next)) = self.replies.iter_mut().find(|(q, _)| q == bytes) {
+                self.pending.extend(next.pop_front().unwrap_or_default());
+            }
+            Ok(())
+        }
+
+        fn read(&mut self, _timeout: Duration) -> Result<Vec<u8>, Error> {
+            Ok(std::mem::take(&mut self.pending))
+        }
+    }
+
+    #[test]
+    fn a_ready_right_after_the_program_does_not_end_the_job() {
+        // Over Bluetooth the Portrait 4 answered "ready" 20 ms after the program, before it had
+        // started; ending the job there closed the connection and the machine dropped the job.
+        let transcript = include_str!("../tests/fixtures/portrait4-bluetooth-pen-square.txt");
+        let mut s = Session::new(Recorded::from_transcript(transcript));
+        s.poll_interval = Duration::from_millis(1);
+        s.reply_timeout = Duration::from_millis(200);
+        assert!(s.version().unwrap().starts_with("Portrait 4 V1.05"));
+        let options = RunOptions { pass_pens: vec![true], ..RunOptions::default() };
+        s.run_with(&program(None), &options, &JobControl::new(), |_| {}).unwrap();
+        assert_eq!(s.transport().left(&[0x1b, 0x05]), 0, "every recorded status was asked for, up to the last ready");
+        assert_eq!(s.transport().left(&[0x1b, 0x15]), 0, "the tool was checked: the pen");
+    }
 }

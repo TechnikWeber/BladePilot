@@ -95,9 +95,8 @@ half second while connected; it never sends `ESC EOT`.
 | `L0` | Pen-up marker between sections |
 | `SO0` | Park, used after the last move |
 | `H` | Home |
-| `BZ1,<d0>,<r0>,<d1>,<r1>,<d2>,<r2>,<d3>,<r3>,0` | A cubic Bézier curve with the tool down: start, two control points, end. Silhouette Studio sends circles as four of them; the Portrait 4 cuts them |
-| `TR0,1` … `TR0,0` | Silhouette Studio sends these around every job; *meaning unknown* |
-| `BE1…`, `BE2…` | Binary records Silhouette Studio uses for straight segments; *format unknown*, not needed: `D` works |
+| `BZ1,<d0>,<r0>,<d1>,<r1>,<d2>,<r2>,<d3>,<r3>,0` | A cubic Bézier curve with the tool down: start, two control points, end. The Portrait 4 cuts curves sent this way; BladePilot sends short lines instead |
+| `TR…`, `BE…` | Seen around and inside jobs of the vendor software; *meaning unknown*, not needed by BladePilot |
 
 ## Generations
 
@@ -108,16 +107,20 @@ half second while connected; it never sends `ESC EOT`.
 | Cameo 4 | Cameo 4 and 5, Portrait 3 and 4 | Force and blade offset are sent twice; no `J` on one-holder machines |
 
 The holder argument on the Portrait 4 (one holder): it acts on BladePilot's `FX<f>,1`, `!<s>,1`,
-`TF<d>,1` and `FC<x>,1,1` (force, speed and depth all measurably took effect). Silhouette Studio
-writes the same machine as `FX<f>,TJ<a>` (force and acceleration in one record), `!<s>` and
-`FC<x>` without a holder, `FE0,0` and `FF…,0` with holder 0, and `TF<d>,1`.
+`TF<d>,1` and `FC<x>,1,1` (force, speed and depth all measurably took effect).
 
-What Silhouette Studio sends around a job on the Portrait 4: mat (`TG11` for the 8.5 × 12 in
-mat), `FN0`, `TB50,0`, `TR0,1`, then the cutting area of the page with a 1.5 mm margin
-(`\30,30`, `Z` = page size minus 30 units), the tool settings, the paths, and at the end `L0`,
-`\0,0`, `M0,0`, `TR0,0`, `FN0`, `TB50,0`. After `TF` it waits until the status is `0` before it
-sends the paths; BladePilot sends everything at once, and the machine keeps the paths until the
-blade is set.
+The machine keeps what it is sent while it sets the AutoBlade: BladePilot sends the settings and
+the paths in one go and the cut starts once the blade is set. A job ends with the mat still
+loaded; the machine only moves it out on its own button.
+
+### How the vendor software seems to do it (assumptions)
+
+Only a rough picture, as a hint for others; BladePilot does not depend on it. Silhouette Studio
+appears to frame every job with a few set-up and closing commands of its own, to limit the cutting
+area to the page with a small margin, to send force, speed and blade offset partly without the
+holder argument, to wait until the blade is set before it sends the paths, to send curves as
+Bézier segments and straight lines in a compact form of its own, and to move the head back to the
+origin at the end. It polls the status and the tools about twice a second while connected.
 
 ## Registration marks (print and cut)
 
@@ -137,9 +140,16 @@ positions manually. The sender waits until the status reads ready before it send
 - The meaning of `TR`, `TI`, `TB71`, `FA` and `ESC SYN`, and the `BE` records.
 - What the Low Energy vendor service is for.
 
-Answered on the first test day: the Portrait 4's version string and tool reply, what Silhouette
-Studio sends for the same job (above), and what the machine offers over Bluetooth (the same
-GP-GL over RFCOMM).
+Answered on the first test day: the Portrait 4's version string and tool reply, and what the
+machine offers over Bluetooth (the same GP-GL over RFCOMM).
+
+## Reproducing this without the private material
+
+BladePilot's own captures of the Portrait 4 are in the repository:
+[`crates/capture/tests/fixtures`](../crates/capture/tests/fixtures) (USB, read them with
+`bladepilot replay`) and
+[`crates/device/tests/fixtures`](../crates/device/tests/fixtures) (a Bluetooth session as a
+text transcript). Tests replay them, so what is written here stays checked.
 
 ## Sources
 
