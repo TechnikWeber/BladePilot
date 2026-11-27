@@ -1,0 +1,530 @@
+[
+  {
+    "id": "portrait3",
+    "name": "Silhouette Portrait 3",
+    "cutWidthMm": 203.0,
+    "maxLengthMm": 18290.0,
+    "holders": 1,
+    "target": true,
+    "registrationMarks": true,
+    "defaultMat": "8x12",
+    "mats": [
+      {
+        "id": "8x12",
+        "widthMm": 203.2,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 203.0,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "none",
+        "widthMm": 203.0,
+        "heightMm": 18290.0,
+        "areaWidthMm": 203.0,
+        "areaHeightMm": 18290.0
+      }
+    ]
+  },
+  {
+    "id": "portrait4",
+    "name": "Silhouette Portrait 4",
+    "cutWidthMm": 216.0,
+    "maxLengthMm": 18290.0,
+    "holders": 1,
+    "target": true,
+    "registrationMarks": true,
+    "defaultMat": "8.5x12",
+    "mats": [
+      {
+        "id": "8.5x12",
+        "widthMm": 215.89999999999998,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 215.89999999999998,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "8x12",
+        "widthMm": 203.2,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 203.2,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "none",
+        "widthMm": 216.0,
+        "heightMm": 18290.0,
+        "areaWidthMm": 216.0,
+        "areaHeightMm": 18290.0
+      }
+    ]
+  },
+  {
+    "id": "portrait",
+    "name": "Silhouette Portrait",
+    "cutWidthMm": 206.0,
+    "maxLengthMm": 3000.0,
+    "holders": 1,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "8x12",
+    "mats": [
+      {
+        "id": "8x12",
+        "widthMm": 203.2,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 203.2,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "none",
+        "widthMm": 206.0,
+        "heightMm": 3000.0,
+        "areaWidthMm": 206.0,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "portrait2",
+    "name": "Silhouette Portrait 2",
+    "cutWidthMm": 203.0,
+    "maxLengthMm": 3000.0,
+    "holders": 1,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "8x12",
+    "mats": [
+      {
+        "id": "8x12",
+        "widthMm": 203.2,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 203.0,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "none",
+        "widthMm": 203.0,
+        "heightMm": 3000.0,
+        "areaWidthMm": 203.0,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo",
+    "name": "Silhouette Cameo",
+    "cutWidthMm": 304.0,
+    "maxLengthMm": 3000.0,
+    "holders": 1,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "12x12",
+    "mats": [
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.0,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.0,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 304.0,
+        "heightMm": 3000.0,
+        "areaWidthMm": 304.0,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo2",
+    "name": "Silhouette Cameo 2",
+    "cutWidthMm": 304.0,
+    "maxLengthMm": 3000.0,
+    "holders": 1,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "12x12",
+    "mats": [
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.0,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.0,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 304.0,
+        "heightMm": 3000.0,
+        "areaWidthMm": 304.0,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo3",
+    "name": "Silhouette Cameo 3",
+    "cutWidthMm": 304.8,
+    "maxLengthMm": 3000.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "12x12",
+    "mats": [
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 304.8,
+        "heightMm": 3000.0,
+        "areaWidthMm": 304.8,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo4",
+    "name": "Silhouette Cameo 4",
+    "cutWidthMm": 304.8,
+    "maxLengthMm": 3000.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "12x12",
+    "mats": [
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 304.8,
+        "heightMm": 3000.0,
+        "areaWidthMm": 304.8,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo4plus",
+    "name": "Silhouette Cameo 4 Plus",
+    "cutWidthMm": 372.0,
+    "maxLengthMm": 3000.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "15x15",
+    "mats": [
+      {
+        "id": "15x15",
+        "widthMm": 381.0,
+        "heightMm": 381.0,
+        "areaWidthMm": 372.0,
+        "areaHeightMm": 381.0
+      },
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 372.0,
+        "heightMm": 3000.0,
+        "areaWidthMm": 372.0,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo4pro",
+    "name": "Silhouette Cameo 4 Pro",
+    "cutWidthMm": 600.0,
+    "maxLengthMm": 3000.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "24x24",
+    "mats": [
+      {
+        "id": "24x24",
+        "widthMm": 609.5999999999999,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 600.0,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 600.0,
+        "heightMm": 3000.0,
+        "areaWidthMm": 600.0,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo5",
+    "name": "Silhouette Cameo 5",
+    "cutWidthMm": 330.2,
+    "maxLengthMm": 3000.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "12x12",
+    "mats": [
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 330.2,
+        "heightMm": 3000.0,
+        "areaWidthMm": 330.2,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo5plus",
+    "name": "Silhouette Cameo 5 Plus",
+    "cutWidthMm": 372.0,
+    "maxLengthMm": 3000.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "15x15",
+    "mats": [
+      {
+        "id": "15x15",
+        "widthMm": 381.0,
+        "heightMm": 381.0,
+        "areaWidthMm": 372.0,
+        "areaHeightMm": 381.0
+      },
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 372.0,
+        "heightMm": 3000.0,
+        "areaWidthMm": 372.0,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameopromk2",
+    "name": "Silhouette Cameo Pro MK II",
+    "cutWidthMm": 609.0,
+    "maxLengthMm": 18290.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "24x24",
+    "mats": [
+      {
+        "id": "24x24",
+        "widthMm": 609.5999999999999,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 609.0,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 609.0,
+        "heightMm": 18290.0,
+        "areaWidthMm": 609.0,
+        "areaHeightMm": 18290.0
+      }
+    ]
+  },
+  {
+    "id": "cameo5alpha",
+    "name": "Silhouette Cameo 5 Alpha",
+    "cutWidthMm": 330.2,
+    "maxLengthMm": 3000.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "12x12",
+    "mats": [
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 330.2,
+        "heightMm": 3000.0,
+        "areaWidthMm": 330.2,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cameo5alphaplus",
+    "name": "Silhouette Cameo 5 Alpha Plus",
+    "cutWidthMm": 372.0,
+    "maxLengthMm": 3000.0,
+    "holders": 2,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "15x15",
+    "mats": [
+      {
+        "id": "15x15",
+        "widthMm": 381.0,
+        "heightMm": 381.0,
+        "areaWidthMm": 372.0,
+        "areaHeightMm": 381.0
+      },
+      {
+        "id": "12x12",
+        "widthMm": 304.79999999999995,
+        "heightMm": 304.79999999999995,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 304.79999999999995
+      },
+      {
+        "id": "12x24",
+        "widthMm": 304.79999999999995,
+        "heightMm": 609.5999999999999,
+        "areaWidthMm": 304.79999999999995,
+        "areaHeightMm": 609.5999999999999
+      },
+      {
+        "id": "none",
+        "widthMm": 372.0,
+        "heightMm": 3000.0,
+        "areaWidthMm": 372.0,
+        "areaHeightMm": 3000.0
+      }
+    ]
+  },
+  {
+    "id": "cc200",
+    "name": "Graphtec Craft Robo CC200-20",
+    "cutWidthMm": 200.0,
+    "maxLengthMm": 1000.0,
+    "holders": 1,
+    "target": false,
+    "registrationMarks": true,
+    "defaultMat": "none",
+    "mats": [
+      {
+        "id": "none",
+        "widthMm": 200.0,
+        "heightMm": 1000.0,
+        "areaWidthMm": 200.0,
+        "areaHeightMm": 1000.0
+      }
+    ]
+  }
+]

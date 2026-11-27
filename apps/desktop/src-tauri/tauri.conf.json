@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "BladePilot",
+  "mainBinaryName": "bladepilot-desktop",
+  "identifier": "io.github.technikweber.bladepilot",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../ui/dist",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "BladePilot",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 1000,
+        "minHeight": 640,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "img-src": "'self' data: blob:",
+        "style-src": "'self' 'unsafe-inline'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "category": "Graphics",
+    "shortDescription": "Cutting software for Silhouette Portrait and Cameo machines",
+    "longDescription": "Open SVG and Silhouette Studio files, place them on the mat and cut them on Silhouette Portrait and Cameo machines, or watch the virtual plotter cut them first.",
+    "publisher": "TechnikWeber",
+    "copyright": "Copyright (c) 2026 Philipp Weber",
+    "homepage": "https://github.com/TechnikWeber/BladePilot",
+    "license": "MIT",
+    "licenseFile": "../../../LICENSE",
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/lib/udev/rules.d/70-bladepilot-desktop.rules": "../../../packaging/linux/70-bladepilot.rules"
+        },
+        "postInstallScript": "../../../packaging/linux/postinstall.sh"
+      },
+      "rpm": {
+        "files": {
+          "/usr/lib/udev/rules.d/70-bladepilot-desktop.rules": "../../../packaging/linux/70-bladepilot.rules"
+        },
+        "postInstallScript": "../../../packaging/linux/postinstall.sh"
+      }
+    }
+  }
+}

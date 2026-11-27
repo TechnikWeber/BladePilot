@@ -13,7 +13,8 @@ maintainer's computers.
 - Commit and push after every finished change, so GitHub always matches the local tree.
 - Commit messages are plain: no AI co-author lines, no session links.
 - Before each commit: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace`.
+  `cargo test --workspace`; after front-end changes also `npm run check`, `npm test` and
+  `npm run build` in `apps/desktop/ui`.
 - Golden programs in `crates/job/tests/golden/` are what reaches a machine. Review every diff by
   hand; regenerate with `BLESS=1 cargo test -p bladepilot-job` only after an intended change.
 
@@ -41,6 +42,8 @@ Read [docs/CLEAN-ROOM.md](docs/CLEAN-ROOM.md) before touching protocol or file-f
 | `crates/device` | Transports (virtual; USB via nusb; Windows printer class driver) and the job protocol (`Session`) |
 | `crates/capture` | Reads USB captures (pcap/pcapng, USBPcap and usbmon) for `bladepilot replay` |
 | `apps/cli` | `bladepilot` command line |
+| `apps/desktop/src-tauri` | Desktop app `bladepilot-desktop`: Tauri commands over the crates (`service.rs` holds the work, `model.rs` the JSON types) |
+| `apps/desktop/ui` | Its web front end: Vite, TypeScript, Svelte 5, own CSS; `src/lib/api/mock` is the browser stand-in for the Rust side |
 | `docs/` | Roadmap, architecture, protocol, clean-room rules, hardware test day |
 
 ## Status
@@ -86,4 +89,14 @@ the release; 0.x versions are marked as pre-releases. Started by hand, the workf
 cargo test --workspace
 cargo run -p bladepilot-cli -- cut crates/design/tests/fixtures/nested.svg --by-color --simulate out/x.preview.svg
 cargo run -p bladepilot-cli -- cut crates/design/tests/fixtures/square.svg --dry-run
+
+# Desktop app (in apps/desktop/ui, after npm ci)
+npm run tauri dev             # window with hot reload; `npm run dev` alone = browser with the mock backend
+npm run tauri build           # bundles for this system (`npm run tauri -- build --bundles deb`)
+npm run screenshots           # README images into docs/images (headless Chrome, mock backend)
+BLESS=1 cargo test -p bladepilot-desktop   # after changing machines or the demo design: mock JSON
 ```
+
+`?demo`, `?select`, `?preview=0.6`, `?send=change|start`, `?lang=de` and `?theme=dark` put the
+front end into fixed states for screenshots; in `npm run tauri dev` the variable `VITE_STATE` does the
+same inside the window (e.g. `VITE_STATE='demo&send=start'`).

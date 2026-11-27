@@ -17,6 +17,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: System libraries for the desktop app (web view)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libwebkit2gtk-4.1-dev libxdo-dev librsvg2-dev libayatana-appindicator3-dev
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -29,3 +31,23 @@ jobs:
           cargo run -q -p bladepilot-cli --locked -- cut hardware-tests/T1-square.svg --pen --simulate out/T1.preview.svg
           cargo run -q -p bladepilot-cli --locked -- cut hardware-tests/T3-label.svg --simulate out/T3.preview.svg
           cargo run -q -p bladepilot-cli --locked -- cut hardware-tests/T4-two-colours.svg --by-color --pen-color "#ff0000" --simulate out/T4.preview.svg
+
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop/ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/ui/package-lock.json
+      - run: npm ci
+      - name: Types and Svelte checks
+        run: npm run check
+      - name: Unit tests
+        run: npm test
+      - name: Build (the same files run in the window and, with the mock backend, in a browser)
+        run: npm run build

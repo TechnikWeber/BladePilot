@@ -1,0 +1,37 @@
+[package]
+name = "bladepilot-desktop"
+description = "BladePilot's desktop app: a thin Tauri layer of commands over the workspace crates."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "bladepilot_desktop"
+
+[[bin]]
+name = "bladepilot-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+bladepilot-machines = { workspace = true }
+bladepilot-design = { workspace = true }
+bladepilot-job = { workspace = true }
+bladepilot-sim = { workspace = true }
+bladepilot-device = { workspace = true }
+craft-plotter = { workspace = true }
+craft-silhouette-studio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sys-locale = { workspace = true }
+tauri = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
