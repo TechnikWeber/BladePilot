@@ -58,6 +58,35 @@ fn the_same_design_on_a_two_holder_cameo() {
     roundtrip("cameo4", "nested.svg", |spec| spec.grouping = Grouping::ByColor);
 }
 
+#[test]
+fn a_pen_and_a_blade_pass_pause_for_the_tool_change_and_still_cut_the_plan() {
+    use bladepilot_design::Rgb;
+    use bladepilot_device::{JobControl, Progress, RunOptions};
+    let mut spec = JobSpec::new(by_id("portrait3").unwrap());
+    spec.grouping = Grouping::ByColor;
+    spec.color_settings.insert(Rgb(0, 0, 255), CutSettings { pen: true, ..CutSettings::default() });
+    let plan = plan(&fixture("nested.svg"), &spec).unwrap();
+    assert_eq!(plan.tool_changes(), vec![1], "the pen pass comes first, then the blade");
+    let program = encode(&plan).unwrap();
+    let options = RunOptions { pass_starts: bladepilot_job::pass_starts(&plan, &program), pause_before: plan.tool_changes() };
+    let control = JobControl::new();
+    let mut session = Session::instant(SimTransport::new(VirtualPlotter::new(Config::new(plan.machine))));
+    let mut passes = Vec::new();
+    session
+        .run_with(&program, &options, &control, |p| match p {
+            Progress::Paused { .. } => control.resume(),
+            Progress::Pass { index } => passes.push(index),
+            _ => {}
+        })
+        .unwrap();
+    assert_eq!(passes, (0..plan.passes.len()).collect::<Vec<_>>());
+    let plotter = session.into_transport().plotter;
+    assert!(plotter.warnings().is_empty(), "{:?}", plotter.warnings());
+    assert_eq!(plotter.cuts().count(), plan.path_count());
+    // The only command the session adds is the lift before the tool change.
+    assert_eq!(plotter.commands().len(), program.commands.len() + 1);
+}
+
 /// A capture as USBPcap would write it on Windows: every write of `chunks` as one bulk-out request.
 fn usbpcap_capture(chunks: &[&[u8]]) -> Vec<u8> {
     fn block(kind: u32, body: &[u8]) -> Vec<u8> {

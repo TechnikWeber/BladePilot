@@ -64,7 +64,7 @@ importer.
 | T1 | 20 × 20 mm square at X 10, Y 10 | Sketch pen, default settings | `cut hardware-tests\T1-square.svg --pen` |
 | T2 | as T1 | AutoBlade on paper: note depth, force, speed | `cut hardware-tests\T1-square.svg --depth D --force F --speed S` |
 | T3 | 40 × 40 mm square at X 5, Y 5, 20 mm circle in its centre | AutoBlade on paper | `cut hardware-tests\T3-label.svg` with T2's settings |
-| T4 | as T3, circle red, square black | Cut by line colour: red sketch pen, black AutoBlade | `cut hardware-tests\T4-two-colours.svg --by-color --pen-color "#ff0000"` |
+| T4 | as T3, circle red, square black | Cut by line colour: red sketch pen, black AutoBlade | `cut hardware-tests\T4-two-colours.svg --by-color --pen-color "#ff0000"`; it draws the circle, lifts the pen and waits: put the AutoBlade in, press Enter |
 | T5 | 30 mm circle with registration marks | Print and cut: print the sheet, load it, cut | not yet: Studio only |
 | T6 | as T2 | Start, cancel after about a second | Ctrl+C after about a second |
 

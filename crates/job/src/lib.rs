@@ -9,13 +9,15 @@
 //! material that is already cut loose. Shapes that lie inside other shapes come first, so a piece
 //! is never cut free before its holes: between passes by the deepest nesting a pass contains,
 //! within a pass path by path. Within one nesting level the head goes to the nearest next start.
+//! A [`PassOrder::Manual`] order replaces the rules between passes; [`Plan::order_conflicts`]
+//! then says where it cuts a piece loose too early.
 
 use std::collections::BTreeMap;
 
 use bladepilot_design::{Design, Polyline, Rgb, flatten};
 use bladepilot_machines::Machine;
 use craft_plotter::gpgl::silhouette::{self, Mat, Setup};
-use craft_plotter::{Job, Operation, Program, ToolSettings};
+use craft_plotter::{Command, Job, Operation, Program, ToolSettings};
 
 pub use craft_plotter;
 
@@ -68,6 +70,18 @@ pub enum Grouping {
     ByColor,
 }
 
+/// In which order the passes are cut.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum PassOrder {
+    /// Pens first, then the passes whose shapes lie deepest inside others; otherwise the order in
+    /// which the colours first appear in the design.
+    #[default]
+    Auto,
+    /// The passes in the order of these colours (`None` stands for shapes without colour). Passes
+    /// of colours not listed follow in automatic order.
+    Manual(Vec<Option<Rgb>>),
+}
+
 /// Everything a job needs besides the design.
 #[derive(Debug, Clone)]
 pub struct JobSpec {
@@ -76,6 +90,10 @@ pub struct JobSpec {
     /// Where the design's page origin lands on the mat, mm `(x right, y down)`.
     pub offset_mm: (f64, f64),
     pub grouping: Grouping,
+    /// Order of the passes.
+    pub order: PassOrder,
+    /// Shapes of these cut colours are left out (`None` stands for shapes without colour).
+    pub skip: Vec<Option<Rgb>>,
     /// Settings of every pass without a colour of its own.
     pub settings: CutSettings,
     /// Settings for single colours when grouping by colour.
@@ -92,6 +110,8 @@ impl JobSpec {
             mat: machine.default_mat(),
             offset_mm: (0.0, 0.0),
             grouping: Grouping::Single,
+            order: PassOrder::Auto,
+            skip: Vec::new(),
             settings: CutSettings::default(),
             color_settings: BTreeMap::new(),
             tolerance_mm: 0.02,
@@ -149,6 +169,40 @@ impl Plan {
     pub fn bbox_mm(&self) -> Option<(f64, f64, f64, f64)> {
         bbox_of(self.passes.iter().flat_map(|p| p.paths.iter()).flatten())
     }
+
+    /// The passes before which the tool in the holder has to be swapped: a pen pass after a blade
+    /// pass and the other way round. Every pass goes to holder 1, so this holds for machines with
+    /// two holders as well.
+    pub fn tool_changes(&self) -> Vec<usize> {
+        (1..self.passes.len()).filter(|&i| self.passes[i].settings.pen != self.passes[i - 1].settings.pen).collect()
+    }
+
+    /// Pairs `(earlier, later)` of passes where the earlier pass cuts around something the later
+    /// pass cuts or draws: the piece comes loose first. The automatic order never does this; a
+    /// manual one may.
+    pub fn order_conflicts(&self) -> Vec<(usize, usize)> {
+        let boxes: Vec<Vec<_>> = self.passes.iter().map(|p| p.paths.iter().map(|path| bbox_of(path.iter()))).map(Iterator::collect).collect();
+        let mut conflicts = Vec::new();
+        for (i, outer) in self.passes.iter().enumerate() {
+            if outer.settings.pen {
+                continue;
+            }
+            for (j, inner) in self.passes.iter().enumerate().skip(i + 1) {
+                let around = outer.paths.iter().zip(&boxes[i]).filter(|(path, _)| is_closed(path)).any(|(path, outer_box)| {
+                    inner.paths.iter().zip(&boxes[j]).any(|(inner_path, inner_box)| {
+                        let (Some(a), Some(b)) = (outer_box, inner_box) else {
+                            return false;
+                        };
+                        a.0 <= b.0 && a.1 <= b.1 && a.2 >= b.2 && a.3 >= b.3 && inner_path.first().is_some_and(|&p| contains(path, p))
+                    })
+                });
+                if around {
+                    conflicts.push((i, j));
+                }
+            }
+        }
+        conflicts
+    }
 }
 
 /// Why no plan could be made.
@@ -177,7 +231,7 @@ pub fn plan(design: &Design, spec: &JobSpec) -> Result<Plan, Error> {
     }
     let (dx, dy) = spec.offset_mm;
     let mut groups: Vec<(Option<Rgb>, Vec<Polyline>)> = Vec::new();
-    for shape in &design.shapes {
+    for shape in design.shapes.iter().filter(|s| !spec.skip.contains(&s.cut_color())) {
         let key = match spec.grouping {
             Grouping::Single => None,
             Grouping::ByColor => shape.cut_color(),
@@ -209,6 +263,10 @@ pub fn plan(design: &Design, spec: &JobSpec) -> Result<Plan, Error> {
         .collect();
     // Stable: equal passes keep the order their colours first appear in.
     passes.sort_by_key(|(depth, pass)| (!pass.settings.pen, std::cmp::Reverse(*depth)));
+    if let PassOrder::Manual(colors) = &spec.order {
+        // Stable again: passes of colours not listed keep the automatic order, at the end.
+        passes.sort_by_key(|(_, pass)| colors.iter().position(|c| *c == pass.color).unwrap_or(usize::MAX));
+    }
     let passes: Vec<Pass> = passes.into_iter().map(|(_, pass)| pass).collect();
     let area_mm = machine.cut_area_mm(spec.mat);
     let plan = Plan { machine, mat: spec.mat, area_mm, passes };
@@ -240,15 +298,36 @@ pub fn setup(machine: &Machine, mat: Mat) -> Setup {
     }
 }
 
+fn operation(pass: &Pass) -> Operation {
+    Operation { pen: pass.settings.pen, holder: 1, paths: pass.paths.clone(), settings: pass.settings.tool_settings() }
+}
+
 /// The machine program for a plan.
 pub fn encode(plan: &Plan) -> Result<Program, Error> {
-    let operations = plan
-        .passes
-        .iter()
-        .map(|pass| Operation { pen: pass.settings.pen, holder: 1, paths: pass.paths.clone(), settings: pass.settings.tool_settings() })
-        .collect();
-    let job = Job { operations, ..Job::default() };
+    let job = Job { operations: plan.passes.iter().map(operation).collect(), ..Job::default() };
     Ok(silhouette::encode(&setup(plan.machine, plan.mat), &job)?)
+}
+
+/// Where each pass of `plan` begins in its `program`: the index of the pass's first set-up
+/// command. A sender can stop there, before the machine is told about the next tool.
+///
+/// The encoder writes per pass its set-up, then one move per path and repeat followed by the
+/// cuts; the count of moves before a pass and the length of its set-up give the index.
+pub fn pass_starts(plan: &Plan, program: &Program) -> Vec<usize> {
+    let setup = setup(plan.machine, plan.mat);
+    let moves: Vec<usize> = program.commands.iter().enumerate().filter(|(_, c)| matches!(c, Command::Move { .. })).map(|(i, _)| i).collect();
+    let mut starts = Vec::with_capacity(plan.passes.len());
+    let mut moves_before = 0;
+    for (i, pass) in plan.passes.iter().enumerate() {
+        if i == 0 {
+            starts.push(0);
+        } else {
+            let preamble = silhouette::setup(&setup, &operation(pass), false).len();
+            starts.push(moves.get(moves_before).map_or(program.commands.len(), |&at| at.saturating_sub(preamble)));
+        }
+        moves_before += pass.paths.iter().filter(|p| p.len() >= 2).count() * usize::from(pass.settings.passes.max(1));
+    }
+    starts
 }
 
 fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
@@ -370,26 +449,82 @@ mod tests {
         assert!(!contains(&sq, (5.0, -1.0)));
     }
 
-    #[test]
-    fn an_inner_blade_pass_comes_before_the_outer_one_and_pens_come_first() {
-        let red = Rgb(255, 0, 0);
-        let black = Rgb(0, 0, 0);
-        let blue = Rgb(0, 0, 255);
-        let sq = |x: f64, y: f64, s: f64, stroke: Rgb| {
-            let mut p = kurbo::BezPath::new();
-            p.move_to((x, y));
-            p.line_to((x + s, y));
-            p.line_to((x + s, y + s));
-            p.line_to((x, y + s));
-            p.close_path();
-            bladepilot_design::Shape { path: p, stroke: Some(stroke), fill: None }
-        };
-        let design = Design { shapes: vec![sq(10.0, 10.0, 80.0, black), sq(40.0, 40.0, 20.0, red), sq(15.0, 15.0, 5.0, blue)], ..Design::default() };
+    const RED: Rgb = Rgb(255, 0, 0);
+    const BLACK: Rgb = Rgb(0, 0, 0);
+    const BLUE: Rgb = Rgb(0, 0, 255);
+
+    fn sq(x: f64, y: f64, s: f64, stroke: Rgb) -> bladepilot_design::Shape {
+        let mut p = kurbo::BezPath::new();
+        p.move_to((x, y));
+        p.line_to((x + s, y));
+        p.line_to((x + s, y + s));
+        p.line_to((x, y + s));
+        p.close_path();
+        bladepilot_design::Shape { path: p, stroke: Some(stroke), fill: None }
+    }
+
+    /// A black square with a red one inside and a small blue one in a corner, blue drawn by pen.
+    fn three_colours() -> (Design, JobSpec) {
+        let design = Design { shapes: vec![sq(10.0, 10.0, 80.0, BLACK), sq(40.0, 40.0, 20.0, RED), sq(15.0, 15.0, 5.0, BLUE)], ..Design::default() };
         let mut spec = JobSpec::new(bladepilot_machines::by_id("portrait3").unwrap());
         spec.grouping = Grouping::ByColor;
-        spec.color_settings.insert(blue, CutSettings { pen: true, ..CutSettings::default() });
+        spec.color_settings.insert(BLUE, CutSettings { pen: true, ..CutSettings::default() });
+        (design, spec)
+    }
+
+    fn colors(plan: &Plan) -> Vec<Option<Rgb>> {
+        plan.passes.iter().map(|p| p.color).collect()
+    }
+
+    #[test]
+    fn an_inner_blade_pass_comes_before_the_outer_one_and_pens_come_first() {
+        let (design, spec) = three_colours();
         let plan = plan(&design, &spec).unwrap();
-        let order: Vec<_> = plan.passes.iter().map(|p| p.color).collect();
-        assert_eq!(order, vec![Some(blue), Some(red), Some(black)]);
+        assert_eq!(colors(&plan), vec![Some(BLUE), Some(RED), Some(BLACK)]);
+        assert!(plan.order_conflicts().is_empty(), "the automatic order cuts nothing loose early");
+        assert_eq!(plan.tool_changes(), vec![1], "pen first, then the blade");
+    }
+
+    #[test]
+    fn a_manual_order_is_kept_and_its_conflicts_are_named() {
+        let (design, mut spec) = three_colours();
+        spec.order = PassOrder::Manual(vec![Some(BLACK), Some(BLUE)]);
+        let plan = plan(&design, &spec).unwrap();
+        assert_eq!(colors(&plan), vec![Some(BLACK), Some(BLUE), Some(RED)], "red is not listed and comes last");
+        // Black is cut around both blue and red before they are done.
+        assert_eq!(plan.order_conflicts(), vec![(0, 1), (0, 2)]);
+        assert_eq!(plan.tool_changes(), vec![1, 2], "blade, pen, blade");
+    }
+
+    #[test]
+    fn skipped_colours_are_left_out() {
+        let (design, mut spec) = three_colours();
+        spec.skip = vec![Some(RED)];
+        let plan = plan(&design, &spec).unwrap();
+        assert_eq!(colors(&plan), vec![Some(BLUE), Some(BLACK)]);
+        spec.skip = vec![Some(RED), Some(BLUE), Some(BLACK)];
+        assert_eq!(super::plan(&design, &spec), Err(Error::Empty));
+    }
+
+    #[test]
+    fn pass_starts_point_at_each_pass_set_up() {
+        for machine in ["portrait3", "cameo3", "cameo"] {
+            let (design, mut spec) = three_colours();
+            spec.machine = bladepilot_machines::by_id(machine).unwrap();
+            spec.mat = spec.machine.default_mat();
+            spec.color_settings.insert(RED, CutSettings { force: Some(9), passes: 2, overcut_mm: 0.5, ..CutSettings::default() });
+            let plan = plan(&design, &spec).unwrap();
+            let program = encode(&plan).unwrap();
+            let starts = pass_starts(&plan, &program);
+            assert_eq!(starts.len(), 3, "{machine}");
+            assert_eq!(starts[0], 0);
+            let s = setup(plan.machine, plan.mat);
+            for (i, &at) in starts.iter().enumerate().skip(1) {
+                let preamble = silhouette::setup(&s, &operation(&plan.passes[i]), false);
+                assert_eq!(program.commands[at..at + preamble.len()], preamble[..], "{machine}: pass {i}");
+                assert!(matches!(program.commands[at - 1], Command::Draw { .. }), "{machine}: pass {i} follows a cut");
+                assert!(matches!(program.commands[at + preamble.len()], Command::Move { .. }), "{machine}: pass {i} body");
+            }
+        }
     }
 }

@@ -15,7 +15,7 @@
 | `bladepilot-design` | Reads SVG with `usvg` and Silhouette Studio documents with `craft-silhouette-studio` into one model: Bézier paths in mm, `(x right, y down)` from the page's top-left corner, with outline and fill colours. Flattens curves into polylines. |
 | `bladepilot-job` | Turns a design into a plan: flatten within a tolerance (0.02 mm by default), move onto the mat, group into passes, order, check against the cutting area. Encodes a plan with `craft-plotter`. |
 | `bladepilot-sim` | The virtual plotter. Parses the byte stream like a machine, keeps the head position, answers queries, records cuts and lifted moves, warns, draws SVG. |
-| `bladepilot-device` | The `Transport` trait and the `Session` that runs a job: initialise, wait until ready, stream, wait for marks, wait until done. Transports: the virtual plotter; USB through nusb on Linux and macOS; on Windows the USB printer class driver (`usbprint.sys`), which Silhouette Studio uses too, so no driver has to be replaced. |
+| `bladepilot-device` | The `Transport` trait and the `Session` that runs a job: initialise, wait until ready, stream, wait for marks, wait until done. A `JobControl` pauses (at the next lifted move), resumes and stops (lift, park) a job from another thread, and the session pauses by itself before a pass that needs another tool. Transports: the virtual plotter; USB through nusb on Linux and macOS; on Windows the USB printer class driver (`usbprint.sys`), which Silhouette Studio uses too, so no driver has to be replaced. |
 | `bladepilot-capture` | Reads USB captures (pcap, pcapng) from USBPcap and usbmon, finds the machine and splits its traffic into commands and replies, for `bladepilot replay`. |
 | `bladepilot-cli` | The `bladepilot` command line. |
 
@@ -33,7 +33,11 @@
   is already cut loose. Shapes inside other shapes come first, so a piece is never cut free
   before its holes: between passes by the deepest nesting a pass contains, within a pass path
   by path. Within one nesting level the head goes to the nearest next start; open paths may be
-  cut backwards when their end is nearer.
+  cut backwards when their end is nearer. A manual pass order overrides the rules between
+  passes, and the planner names every pass that would cut a piece loose too early.
+- **Tool changes.** Every pass goes to tool holder 1. Between a pen pass and a blade pass the
+  job stops with the tool lifted until the user has swapped it; the only command the session
+  adds to the program is that lift (a move to where the tool is).
 - **Only one place with `unsafe`.** The Windows transport calls Win32 directly; the rest of the
   workspace denies `unsafe` code.
 - **Units.** Millimetres everywhere in the model, `(x right, y down)`. The machine counts in

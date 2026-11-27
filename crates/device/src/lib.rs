@@ -3,8 +3,10 @@
 //! A [`Transport`] moves bytes: [`SimTransport`] to the virtual plotter, [`usb::UsbTransport`] to a
 //! real machine. A [`Session`] speaks the job protocol on top of either: initialise, wait until
 //! the machine is ready, stream the program, wait for the registration marks when the job has
-//! them, and wait until the machine is done.
+//! them, and wait until the machine is done. A [`JobControl`] pauses, resumes or stops a running
+//! job from another thread; [`RunOptions`] add pauses for tool changes between passes.
 
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use bladepilot_sim::VirtualPlotter;
@@ -34,6 +36,8 @@ pub enum Error {
     UnknownStatus(u8),
     #[error("the machine did not get ready in time")]
     Timeout,
+    #[error("the job was stopped")]
+    Stopped,
 }
 
 /// Moves bytes to a machine and back.
@@ -82,6 +86,10 @@ impl Transport for SimTransport {
 pub enum Progress {
     /// The machine is initialised and ready.
     Ready,
+    /// The commands of pass `index` (counted from 0) go out next.
+    Pass {
+        index: usize,
+    },
     /// `sent` of `total` bytes of the program are written.
     Sending {
         sent: usize,
@@ -89,9 +97,81 @@ pub enum Progress {
     },
     /// The machine looks for the registration marks.
     SearchingMarks,
+    /// The machine has finished what it got and waits with the tool lifted until the job is
+    /// resumed: before pass `before_pass` for a tool change, or (`None`) because a pause was asked
+    /// for.
+    Paused {
+        before_pass: Option<usize>,
+    },
+    /// The job goes on after a pause.
+    Resumed,
     /// Everything is sent; the machine finishes the cut.
     Finishing,
     Done,
+}
+
+/// How a job runs, besides its program.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunOptions {
+    /// Index of the command each pass begins with (`bladepilot_job::pass_starts`), for
+    /// [`Progress::Pass`] and tool changes.
+    pub pass_starts: Vec<usize>,
+    /// Passes before which the job pauses with the tool lifted, so the tool can be swapped
+    /// (`bladepilot_job::Plan::tool_changes`). The first pass never pauses.
+    pub pause_before: Vec<usize>,
+}
+
+const RUNNING: u8 = 0;
+const PAUSED: u8 = 1;
+const STOPPED: u8 = 2;
+
+/// Pauses, resumes and stops a running job from another thread.
+///
+/// A pause takes effect at the next lifted move: the tool is up and the job can go on exactly where
+/// it was. A stop takes effect at the next command: nothing more is cut, the head is lifted and
+/// parked below the cut as at the end of a job.
+#[derive(Debug, Default)]
+pub struct JobControl {
+    state: AtomicU8,
+}
+
+impl JobControl {
+    pub fn new() -> JobControl {
+        JobControl::default()
+    }
+
+    /// Asks a running job to pause.
+    pub fn pause(&self) {
+        let _ = self.state.compare_exchange(RUNNING, PAUSED, Ordering::SeqCst, Ordering::SeqCst);
+    }
+
+    /// Lets a paused job go on.
+    pub fn resume(&self) {
+        let _ = self.state.compare_exchange(PAUSED, RUNNING, Ordering::SeqCst, Ordering::SeqCst);
+    }
+
+    /// Asks the job to stop; it cannot be resumed afterwards.
+    pub fn stop(&self) {
+        self.state.store(STOPPED, Ordering::SeqCst);
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.state.load(Ordering::SeqCst) == PAUSED
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.state.load(Ordering::SeqCst) == STOPPED
+    }
+}
+
+/// What a session tracks while it streams a program.
+struct Streaming<'a> {
+    options: &'a RunOptions,
+    control: &'a JobControl,
+    sent: usize,
+    total: usize,
+    /// Where the last cut ended while the tool is still down.
+    tool_down_at: Option<(f64, f64)>,
 }
 
 /// The job protocol on top of a transport.
@@ -192,38 +272,134 @@ impl<T: Transport> Session<T> {
         }
     }
 
-    fn send(&mut self, commands: &[Command], progress: &mut impl FnMut(Progress), sent: &mut usize, total: usize) -> Result<(), Error> {
-        let bytes = craft_plotter::delimit(commands);
-        for chunk in bytes.chunks(CHUNK) {
-            self.transport.write_all(chunk)?;
-            *sent += chunk.len();
-            progress(Progress::Sending { sent: *sent, total });
-        }
-        Ok(())
-    }
-
     /// Runs a whole program: initialise, wait until ready, send, wait for the marks when the job
     /// has registration, send the rest, wait until the machine is done.
-    pub fn run(&mut self, program: &Program, mut progress: impl FnMut(Progress)) -> Result<(), Error> {
+    pub fn run(&mut self, program: &Program, progress: impl FnMut(Progress)) -> Result<(), Error> {
+        self.run_with(program, &RunOptions::default(), &JobControl::new(), progress)
+    }
+
+    /// [`Session::run`] with pauses for tool changes and a [`JobControl`]. A stopped job lifts the
+    /// tool, parks and ends with [`Error::Stopped`].
+    pub fn run_with(
+        &mut self,
+        program: &Program,
+        options: &RunOptions,
+        control: &JobControl,
+        mut progress: impl FnMut(Progress),
+    ) -> Result<(), Error> {
         self.init()?;
         self.wait_ready(self.reply_timeout)?;
         progress(Progress::Ready);
-        let total = program.to_stream().len();
-        let mut sent = 0;
+        let mut run = Streaming { options, control, sent: 0, total: program.to_stream().len(), tool_down_at: None };
         let (before, after) = program.split_at_registration();
-        if program.registration_wait.is_some() {
-            self.send(before, &mut progress, &mut sent, total)?;
-            progress(Progress::SearchingMarks);
-            match self.wait_ready(self.marks_timeout) {
-                Err(Error::NoMedia) => return Err(Error::MarksNotFound),
-                other => other?,
+        let streamed = (|| {
+            if program.registration_wait.is_some() {
+                self.stream(before, 0, &mut run, &mut progress)?;
+                progress(Progress::SearchingMarks);
+                match self.wait_ready(self.marks_timeout) {
+                    Err(Error::NoMedia) => return Err(Error::MarksNotFound),
+                    other => other?,
+                }
             }
+            self.stream(after, before.len(), &mut run, &mut progress)
+        })();
+        match streamed {
+            Err(Error::Stopped) => {
+                if run.sent > 0 {
+                    self.park(program)?;
+                }
+                return Err(Error::Stopped);
+            }
+            other => other?,
         }
-        self.send(after, &mut progress, &mut sent, total)?;
         progress(Progress::Finishing);
         self.wait_ready(self.finish_timeout)?;
         progress(Progress::Done);
         Ok(())
+    }
+
+    /// Writes `commands` (the program's commands from index `base` on) in chunks, with the pauses
+    /// and the stop `run` asks for.
+    fn stream(&mut self, commands: &[Command], base: usize, run: &mut Streaming, progress: &mut impl FnMut(Progress)) -> Result<(), Error> {
+        let mut chunk = Vec::with_capacity(CHUNK + 64);
+        for (offset, command) in commands.iter().enumerate() {
+            if let Some(pass) = run.options.pass_starts.iter().position(|&start| start == base + offset) {
+                if pass > 0 && run.options.pause_before.contains(&pass) {
+                    self.flush(&mut chunk, run, progress)?;
+                    if let Some((down_mm, right_mm)) = run.tool_down_at.take() {
+                        // A move to where the tool is lifts it in place.
+                        self.transport.write_all(&craft_plotter::delimit(&[Command::Move { down_mm, right_mm }]))?;
+                    }
+                    run.control.pause();
+                    self.hold(run.control, progress, Some(pass))?;
+                }
+                progress(Progress::Pass { index: pass });
+            }
+            if run.control.is_stopped() {
+                self.flush(&mut chunk, run, progress)?;
+                return Err(Error::Stopped);
+            }
+            chunk.extend_from_slice(command.to_ascii().as_bytes());
+            chunk.push(ETX);
+            let lifted = match command {
+                Command::Draw { down_mm, right_mm } => {
+                    run.tool_down_at = Some((*down_mm, *right_mm));
+                    false
+                }
+                Command::Move { .. } => {
+                    run.tool_down_at = None;
+                    true
+                }
+                _ => false,
+            };
+            let pause_here = lifted && run.control.is_paused();
+            if chunk.len() >= CHUNK || pause_here {
+                self.flush(&mut chunk, run, progress)?;
+            }
+            if pause_here {
+                self.hold(run.control, progress, None)?;
+            }
+        }
+        self.flush(&mut chunk, run, progress)
+    }
+
+    fn flush(&mut self, chunk: &mut Vec<u8>, run: &mut Streaming, progress: &mut impl FnMut(Progress)) -> Result<(), Error> {
+        if chunk.is_empty() {
+            return Ok(());
+        }
+        self.transport.write_all(chunk)?;
+        run.sent += chunk.len();
+        chunk.clear();
+        progress(Progress::Sending { sent: run.sent, total: run.total });
+        Ok(())
+    }
+
+    /// Waits until the machine has done what it got, then until the job is resumed or stopped.
+    fn hold(&mut self, control: &JobControl, progress: &mut impl FnMut(Progress), before_pass: Option<usize>) -> Result<(), Error> {
+        self.wait_ready(self.finish_timeout)?;
+        progress(Progress::Paused { before_pass });
+        let nap = self.poll_interval.max(Duration::from_millis(10));
+        loop {
+            if control.is_stopped() {
+                return Err(Error::Stopped);
+            }
+            if !control.is_paused() {
+                break;
+            }
+            std::thread::sleep(nap);
+        }
+        progress(Progress::Resumed);
+        Ok(())
+    }
+
+    /// After a stop: the program's closing moves (lifted, below the cut), then wait for the
+    /// machine.
+    fn park(&mut self, program: &Program) -> Result<(), Error> {
+        let tail = program.commands.iter().rposition(|c| matches!(c, Command::Draw { .. })).map_or(&[][..], |last| &program.commands[last + 1..]);
+        if !tail.is_empty() {
+            self.transport.write_all(&craft_plotter::delimit(tail))?;
+        }
+        self.wait_ready(self.finish_timeout)
     }
 }
 
@@ -278,6 +454,126 @@ mod tests {
         let mut s = session(cfg);
         assert!(matches!(s.run(&program(None), |_| {}), Err(Error::NoMedia)));
         assert!(s.transport().plotter.strokes().is_empty());
+    }
+
+    /// The virtual plotter behind a lock, so a progress callback can look at what it has got.
+    #[derive(Clone)]
+    struct Shared(std::sync::Arc<std::sync::Mutex<VirtualPlotter>>);
+
+    impl Shared {
+        fn new() -> Shared {
+            Shared(std::sync::Arc::new(std::sync::Mutex::new(VirtualPlotter::new(portrait3()))))
+        }
+
+        fn last_command(&self) -> String {
+            self.0.lock().unwrap().commands().last().cloned().unwrap_or_default()
+        }
+    }
+
+    impl Transport for Shared {
+        fn write_all(&mut self, bytes: &[u8]) -> Result<(), Error> {
+            self.0.lock().unwrap().write(bytes);
+            Ok(())
+        }
+
+        fn read(&mut self, _timeout: Duration) -> Result<Vec<u8>, Error> {
+            Ok(self.0.lock().unwrap().read())
+        }
+    }
+
+    /// A pen square, then a blade square, and where the blade pass begins.
+    fn pen_then_blade() -> (Program, RunOptions) {
+        let setup = Setup { generation: Generation::Cameo4, area_down_mm: 304.8, area_right_mm: 203.0, mat: Mat::Portrait8x12, ..Setup::default() };
+        let square = |at: f64| vec![(at, at), (at + 20.0, at), (at + 20.0, at + 20.0), (at, at + 20.0), (at, at)];
+        let pen = Operation { pen: true, holder: 1, paths: vec![square(10.0)], ..Operation::default() };
+        let blade = Operation { holder: 1, paths: vec![square(50.0)], ..Operation::default() };
+        let second = silhouette::setup(&setup, &pen, true).len() + 5;
+        let program = silhouette::encode(&setup, &Job { operations: vec![pen, blade], ..Job::default() }).unwrap();
+        (program, RunOptions { pass_starts: vec![0, second], pause_before: vec![1] })
+    }
+
+    #[test]
+    fn a_tool_change_pauses_with_the_tool_lifted() {
+        let (program, options) = pen_then_blade();
+        let plotter = Shared::new();
+        let mut s = Session::instant(plotter.clone());
+        let control = JobControl::new();
+        let mut steps = Vec::new();
+        s.run_with(&program, &options, &control, |p| {
+            if p == (Progress::Paused { before_pass: Some(1) }) {
+                // The pen pass ended on (10, 10); the tool is lifted right there.
+                assert_eq!(plotter.last_command(), "M200,200");
+                control.resume();
+            }
+            if !matches!(p, Progress::Sending { .. }) {
+                steps.push(p);
+            }
+        })
+        .unwrap();
+        let expected = [
+            Progress::Ready,
+            Progress::Pass { index: 0 },
+            Progress::Paused { before_pass: Some(1) },
+            Progress::Resumed,
+            Progress::Pass { index: 1 },
+            Progress::Finishing,
+            Progress::Done,
+        ];
+        assert_eq!(steps, expected);
+        let p = plotter.0.lock().unwrap();
+        assert_eq!(p.cuts().count(), 2);
+        assert!(p.warnings().is_empty(), "{:?}", p.warnings());
+    }
+
+    #[test]
+    fn a_pause_waits_at_a_lifted_move_and_the_job_goes_on() {
+        let (program, _) = pen_then_blade();
+        let plotter = Shared::new();
+        let mut s = Session::instant(plotter.clone());
+        let control = JobControl::new();
+        control.pause();
+        let mut pauses = 0;
+        s.run_with(&program, &RunOptions::default(), &control, |p| {
+            if let Progress::Paused { before_pass } = p {
+                assert_eq!(before_pass, None);
+                assert!(plotter.last_command().starts_with('M'), "paused after {}", plotter.last_command());
+                pauses += 1;
+                control.resume();
+            }
+        })
+        .unwrap();
+        assert_eq!(pauses, 1);
+        assert_eq!(plotter.0.lock().unwrap().cuts().count(), 2);
+    }
+
+    #[test]
+    fn a_stop_cuts_nothing_more_and_parks() {
+        let (program, options) = pen_then_blade();
+        let plotter = Shared::new();
+        let mut s = Session::instant(plotter.clone());
+        let control = JobControl::new();
+        let result = s.run_with(&program, &RunOptions { pause_before: vec![], ..options.clone() }, &control, |p| {
+            if p == (Progress::Pass { index: 1 }) {
+                control.stop();
+            }
+        });
+        assert!(matches!(result, Err(Error::Stopped)), "{result:?}");
+        let p = plotter.0.lock().unwrap();
+        assert_eq!(p.cuts().count(), 1, "only the pen pass");
+        let commands = p.commands();
+        assert_eq!(commands.last().map(String::as_str), Some("SO0"), "parked: {:?}", &commands[commands.len() - 3..]);
+        // A stop during a tool change ends the job as well.
+        control.resume();
+        let control = JobControl::new();
+        let mut s = Session::instant(SimTransport::new(VirtualPlotter::new(portrait3())));
+        let result = s.run_with(&program, &options, &control, |p| {
+            if let Progress::Paused { .. } = p {
+                control.stop();
+            }
+        });
+        assert!(matches!(result, Err(Error::Stopped)));
+        control.resume();
+        assert!(control.is_stopped(), "a stopped job stays stopped");
     }
 
     #[test]

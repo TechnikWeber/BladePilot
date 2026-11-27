@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use bladepilot_design::{Design, Rgb};
-use bladepilot_device::{Progress, Session, SimTransport, usb};
+use bladepilot_device::{JobControl, Progress, RunOptions, Session, SimTransport, usb};
 use bladepilot_job::{CutSettings, Grouping, JobSpec, Plan};
 use bladepilot_machines::{Machine, Support};
 use bladepilot_sim::{Config, VirtualPlotter};
@@ -302,10 +302,15 @@ fn cut(args: &CutArgs) -> Result<()> {
     if !args.experimental_usb {
         bail!("cutting on a real machine is not released yet: use --dry-run or --simulate FILE.svg (or --experimental-usb on hardware test days)");
     }
-    send_usb(plan.machine, &program)
+    send_usb(&plan, &program)
 }
 
-fn send_usb(machine: &'static Machine, program: &craft_plotter::Program) -> Result<()> {
+fn tool_name(pen: bool) -> &'static str {
+    if pen { "pen" } else { "blade" }
+}
+
+fn send_usb(plan: &Plan, program: &craft_plotter::Program) -> Result<()> {
+    let machine = plan.machine;
     let found = usb::scan().context("scanning USB")?;
     let target =
         found.iter().find(|f| f.machine.is_some_and(|m| m.id == machine.id)).or_else(|| found.first()).context("no cutting machine found on USB")?;
@@ -316,12 +321,27 @@ fn send_usb(machine: &'static Machine, program: &craft_plotter::Program) -> Resu
     let mut session = Session::new(transport);
     session.init()?;
     eprintln!("connected {}", session.version().unwrap_or_else(|_| "(no version reply)".to_string()));
-    session.run(program, |p| match p {
+    // Every pass goes to holder 1: between a pen and a blade pass the tool has to be swapped.
+    let options = RunOptions { pass_starts: bladepilot_job::pass_starts(plan, program), pause_before: plan.tool_changes() };
+    let control = JobControl::new();
+    session.run_with(program, &options, &control, |p| match p {
         Progress::Ready => eprintln!("ready"),
+        Progress::Pass { index } => {
+            let pass = &plan.passes[index];
+            eprintln!("\npass {}    {} with the {}", index + 1, color_name(pass.color), tool_name(pass.settings.pen));
+        }
         Progress::Sending { sent, total } => {
             eprint!("\rsending   {:>3} %", sent * 100 / total.max(1))
         }
         Progress::SearchingMarks => eprintln!("\nsearching for the registration marks"),
+        Progress::Paused { before_pass: Some(index) } => {
+            let pen = plan.passes[index].settings.pen;
+            eprint!("\nchange    pass {} needs the {}: put it into the holder, then press Enter ", index + 1, tool_name(pen));
+            let _ = std::io::stdin().read_line(&mut String::new());
+            control.resume();
+        }
+        Progress::Paused { before_pass: None } => control.resume(),
+        Progress::Resumed => {}
         Progress::Finishing => eprintln!("\nfinishing"),
         Progress::Done => eprintln!("done"),
     })?;
