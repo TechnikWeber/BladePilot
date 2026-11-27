@@ -1,7 +1,7 @@
 # BladePilot
 
 <p>
-  <img alt="Status: proof of concept" src="https://img.shields.io/badge/status-proof%20of%20concept-lightgrey">
+  <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange">
   <a href="https://github.com/TechnikWeber/BladePilot/releases"><img alt="Download" src="https://img.shields.io/github/v/release/TechnikWeber/BladePilot?include_prereleases&label=download&color=2ea44f"></a>
   <a href="https://github.com/TechnikWeber/BladePilot/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/TechnikWeber/BladePilot/total?color=blue"></a>
   <a href="https://github.com/TechnikWeber/BladePilot/actions/workflows/ci.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/TechnikWeber/BladePilot/ci.yml?branch=main&label=build"></a>
@@ -24,8 +24,10 @@ files (`.studio3`), place them on the mat and cut. A free, independent alternati
 vendor software for the machines you own, written in Rust, with a desktop app and a command
 line.
 
-> **Early development.** The whole chain runs against a virtual plotter. Cutting on a real
-> machine has not been tested yet; when it is, start with a pen on paper.
+> **Alpha.** BladePilot cuts on a real Portrait 4 over USB and Bluetooth (tested on Windows);
+> the Portrait 3 and the other machines are not tested yet. A job that has been sent completely
+> cannot be stopped from BladePilot yet: keep the machine's power button within reach, and try
+> new settings with a test cut first.
 
 ![The BladePilot desktop app: a demo design on the Portrait mat, the passes per colour on the right](docs/images/desktop-light.png)
 
