@@ -179,6 +179,8 @@ export interface Backend {
   openFile(file: File): Promise<DesignInfo>;
   /** The built-in demo design. */
   openDemo(): Promise<DesignInfo>;
+  /** The test cut pattern (12 mm square with a triangle inside), its corner at the page origin. */
+  testDesign(): Promise<DesignInfo>;
   forgetDesign(id: number): Promise<void>;
   planJob(job: JobRequest): Promise<PlanInfo>;
   simulateJob(job: JobRequest): Promise<Simulation>;

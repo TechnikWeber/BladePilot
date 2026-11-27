@@ -37,7 +37,7 @@
     return () => unlisten?.();
   });
 
-  /** `?demo`, `?preview=0.6`, `?send[=change|start]`, `?select`: states for screenshots and tests. */
+  /** `?demo`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?select`: states for screenshots and tests. */
   async function screenshotState(params: URLSearchParams): Promise<void> {
     if (params.has('machine')) app.setMachine(params.get('machine') as string);
     if (!params.has('demo')) return;
@@ -54,6 +54,10 @@
         app.preview.playing = false;
         app.preview.time = app.timeline.total * at;
       }
+    }
+    if (params.has('test')) {
+      const black = '#1f2328';
+      await app.openTestCut(app.prefsOf(black).settings, black);
     }
     if (params.has('send')) {
       app.openSend();

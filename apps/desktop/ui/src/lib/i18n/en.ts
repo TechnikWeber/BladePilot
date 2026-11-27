@@ -153,6 +153,18 @@ const en = {
   'send.passes': 'Passes',
   'send.noPlan': 'Fix the job first: {reason}',
 
+  'test.button': 'Test cut',
+  'test.buttonHint': 'Cut a small square with a triangle inside to try these settings',
+  'test.title': 'Test cut',
+  'test.body': 'Cuts a 12 mm square with a triangle inside, with the settings below. If the triangle lifts out cleanly and the backing stays whole, they fit the material.',
+  'test.settings': 'Settings',
+  'test.position': 'Position on the mat',
+  'test.next': 'Next free spot',
+  'test.start': 'Cut the test',
+  'test.again': 'Another test next to it',
+  'test.doneBody': 'Lift the triangle out. If it comes cleanly and the backing is whole, the settings fit; otherwise change force or depth and test again.',
+  'test.outside': 'The test does not fit there: choose a spot inside the cutting area.',
+
   'tool.blade': 'blade',
   'tool.pen': 'pen',
 

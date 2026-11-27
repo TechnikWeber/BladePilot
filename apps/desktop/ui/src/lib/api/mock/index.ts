@@ -1,6 +1,7 @@
 // The mock backend: what the browser demo and the README screenshots run on. The machine table
 // and the demo design are the Rust side's own output (see the desktop crate's tests).
 import demoJson from './demo.json';
+import testJson from './test-cut.json';
 import machinesJson from './machines.json';
 import { planMock, simulateMock } from './planner';
 import { importSvg } from './svg';
@@ -67,6 +68,10 @@ export const mockBackend: Backend = {
   },
   async openDemo() {
     return keep(demoJson as unknown as DesignInfo);
+  },
+  async testDesign() {
+    const known = [...designs.values()].find((d) => d.name === 'test-cut');
+    return known ?? keep(testJson as unknown as DesignInfo);
   },
   async forgetDesign(id) {
     designs.delete(id);

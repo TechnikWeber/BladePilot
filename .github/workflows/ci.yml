@@ -31,6 +31,7 @@ jobs:
           cargo run -q -p bladepilot-cli --locked -- cut hardware-tests/T1-square.svg --pen --simulate out/T1.preview.svg
           cargo run -q -p bladepilot-cli --locked -- cut hardware-tests/T3-label.svg --simulate out/T3.preview.svg
           cargo run -q -p bladepilot-cli --locked -- cut hardware-tests/T4-two-colours.svg --by-color --pen-color "#ff0000" --simulate out/T4.preview.svg
+          cargo run -q -p bladepilot-cli --locked -- test-cut --at 150,10 --force 10 --depth 3 --simulate out/test-cut.preview.svg
 
   ui:
     runs-on: ubuntu-latest

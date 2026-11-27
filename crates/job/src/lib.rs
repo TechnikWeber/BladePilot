@@ -205,6 +205,34 @@ impl Plan {
     }
 }
 
+/// Edge of the square test pattern, mm.
+pub const TEST_SIZE_MM: f64 = 12.0;
+
+/// The test cut: a 12 mm square with a triangle inside, its top-left corner at `at` (mm, `x`
+/// right, `y` down). The triangle is cut first. When it lifts out cleanly and the backing is
+/// whole, the settings suit the material.
+pub fn test_pattern(at: (f64, f64)) -> Design {
+    use bladepilot_design::{Shape, kurbo::BezPath};
+    let (x, y) = at;
+    let polygon = |points: &[(f64, f64)]| {
+        let mut path = BezPath::new();
+        for (i, &(px, py)) in points.iter().enumerate() {
+            if i == 0 {
+                path.move_to((x + px, y + py));
+            } else {
+                path.line_to((x + px, y + py));
+            }
+        }
+        path.close_path();
+        Shape { path, stroke: None, fill: None }
+    };
+    let s = TEST_SIZE_MM;
+    // An equilateral triangle with 7 mm sides, centred in the square.
+    let triangle = polygon(&[(6.0, 2.97), (9.5, 9.03), (2.5, 9.03)]);
+    let square = polygon(&[(0.0, 0.0), (s, 0.0), (s, s), (0.0, s)]);
+    Design { page_mm: Some((s, s)), shapes: vec![square, triangle], ..Design::default() }
+}
+
 /// Why no plan could be made.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Error {
@@ -504,6 +532,18 @@ mod tests {
         assert_eq!(colors(&plan), vec![Some(BLUE), Some(BLACK)]);
         spec.skip = vec![Some(RED), Some(BLUE), Some(BLACK)];
         assert_eq!(super::plan(&design, &spec), Err(Error::Empty));
+    }
+
+    #[test]
+    fn the_test_cut_cuts_the_triangle_first_where_it_is_placed() {
+        let mut spec = JobSpec::new(bladepilot_machines::by_id("portrait3").unwrap());
+        spec.settings = CutSettings { force: Some(10), ..CutSettings::default() };
+        let plan = plan(&test_pattern((150.0, 20.0)), &spec).unwrap();
+        assert_eq!(plan.passes.len(), 1);
+        let paths = &plan.passes[0].paths;
+        assert_eq!(paths.iter().map(Vec::len).collect::<Vec<_>>(), [4, 5], "triangle, then square");
+        assert_eq!(plan.bbox_mm(), Some((150.0, 20.0, 150.0 + TEST_SIZE_MM, 20.0 + TEST_SIZE_MM)));
+        assert!((plan.cut_length_mm() - (4.0 * TEST_SIZE_MM + 21.0)).abs() < 0.01, "{}", plan.cut_length_mm());
     }
 
     #[test]

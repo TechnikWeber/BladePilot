@@ -11,6 +11,9 @@ maintainer's computers.
 
 - Talk to the maintainer in German. Everything in the repository is English.
 - Commit and push after every finished change, so GitHub always matches the local tree.
+- Release whenever more than a bug fix has landed: bump the version in `Cargo.toml` and
+  `apps/desktop/ui/package.json` (0.x: minor for features), add the `CHANGELOG.md` section,
+  run `npm run screenshots`, then tag and push (see Releases) and check the published files.
 - Commit messages are plain: no AI co-author lines, no session links.
 - Before each commit: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`; after front-end changes also `npm run check`, `npm test` and

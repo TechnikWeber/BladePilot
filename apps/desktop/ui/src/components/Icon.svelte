@@ -41,6 +41,7 @@
     swap: 'M7 4.5 3.5 8 7 11.5 M3.5 8h13 M17 12.5l3.5 3.5-3.5 3.5 M20.5 16h-13',
     ruler: 'M3.5 15.5l12-12 5 5-12 12Z M7 12l2 2 M9.5 9.5l1.5 1.5 M12 7l2 2',
     layers: 'M12 3.5l8.5 4.5-8.5 4.5L3.5 8Z M3.5 12.5l8.5 4.5 8.5-4.5 M3.5 16.5 12 21l8.5-4.5',
+    testCut: 'M4.5 4.5h15v15h-15Z M12 8l4 7H8Z',
   } as const;
   export type IconName = keyof typeof ICONS;
 </script>

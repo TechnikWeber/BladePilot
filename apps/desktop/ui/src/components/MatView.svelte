@@ -458,6 +458,16 @@
       <PreviewLayer {px} />
     {/if}
 
+    <!-- Where the test cut goes -->
+    {#if app.send?.mode === 'test' && app.test && app.testDesign}
+      <g class="test-marker" transform="translate({app.test.x} {app.test.y})" pointer-events="none">
+        <rect x="-2.5" y="-2.5" width="17" height="17" rx="1.6" class="halo" vector-effect="non-scaling-stroke" />
+        {#each app.testDesign.shapes as shape, i (i)}
+          <path d={shape.d} vector-effect="non-scaling-stroke" />
+        {/each}
+      </g>
+    {/if}
+
     <!-- Snap guides -->
     {#if guides.x !== null}
       <line x1={guides.x} y1={-MARGIN_TOP} x2={guides.x} y2={area.h + MARGIN_BOTTOM} class="guide" />
@@ -653,6 +663,27 @@
 
   .items.faded .hit {
     pointer-events: none;
+  }
+
+  .test-marker path {
+    fill: none;
+    stroke: #ea6a1f;
+    stroke-width: 2;
+    stroke-linejoin: round;
+  }
+
+  .test-marker .halo {
+    fill: rgba(234, 106, 31, 0.14);
+    stroke: #ea6a1f;
+    stroke-width: 1.2;
+    stroke-dasharray: 4 3;
+    animation: blink 1.6s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    50% {
+      fill-opacity: 0.35;
+    }
   }
 
   .guide {

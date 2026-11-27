@@ -38,6 +38,9 @@ line.
 - **Open designs:** SVG (text becomes outlines) and Silhouette Studio `.studio` / `.studio3`
   files (outlines, line colours, page size). Store designs with copy protection are refused,
   never decrypted.
+- **Test cut:** a 12 mm square with a triangle inside, cut with one pass's settings on a free
+  spot of the mat (or `bladepilot test-cut --at X,Y …`), to try force and depth before the real
+  job.
 - **Plan the job:** one pass, or one pass per colour with its own force, speed, depth and
   repeats. Pens draw before blades cut, holes are cut before the shape around them, and the
   head takes the nearest next start. Choose the order yourself if you like: BladePilot warns
@@ -146,16 +149,42 @@ machines and their files. It contains no vendor code, assets or data, and revers
 material never enters this repository. The rules are in [docs/CLEAN-ROOM.md](docs/CLEAN-ROOM.md),
 the protocol as BladePilot understands it in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-## Related projects
+## Related projects, and why BladePilot
 
-- [craft-libs](https://github.com/storytold/craft-libs): `craft-plotter` and
-  `craft-silhouette-studio`, the building blocks BladePilot uses (MIT OR Apache-2.0)
-- [inkscape-silhouette](https://github.com/fablabnbg/inkscape-silhouette): Inkscape extension
-  for the same machines, with the community's device notes
-- [cuthulhu](https://github.com/vcolombo/cuthulhu): another Rust cutting app, GPL-3.0
-- [studio3svg](https://github.com/zaydmulani09/studio3svg): converts `.studio3` files to SVG
-- [py_silhouette](https://github.com/mossblaser/py_silhouette) and
-  [robocut](https://github.com/alpharesearch/robocut): earlier drivers
+Silhouette Studio, the vendor's software, runs on Windows and macOS only. These open projects
+work with the same machines or files; what BladePilot does differently, or means to:
+
+- **[inkscape-silhouette](https://github.com/fablabnbg/inkscape-silhouette)** (GPL-2.0,
+  Python) is the most complete community driver: an Inkscape extension for nearly every
+  Silhouette machine, with registration marks and Bluetooth, and the community's device notes.
+  *BladePilot* needs neither Inkscape nor Python nor libusb: it is a standalone app and command
+  line with installers. It opens Silhouette Studio files, animates the exact cut order as an
+  independent virtual plotter records it, keeps the window usable while cutting, and pauses,
+  stops and waits for tool changes. On Windows it uses the printer driver Silhouette Studio
+  uses, so no driver has to be swapped. Planned: a registration-mark search that copes with
+  real prints (a frequent complaint in its issue tracker) and Bluetooth.
+- **[cuthulhu](https://github.com/vcolombo/cuthulhu)** (GPL-3.0, Rust and Tauri, early work in
+  progress, not released) is a desktop cutting app for the Cameo 5 Alpha and HPGL cutters, with
+  a network cut host and bitmap tracing. *BladePilot* is built for the Portrait 3 and 4 and the
+  rest of the Silhouette line, is MIT-licensed and released with installers for Linux, Windows
+  and macOS, and opens `.studio` / `.studio3`. Its protocol work is clean-room and checked by a
+  virtual plotter written separately from the encoder, where cuthulhu's Silhouette driver is
+  ported from inkscape-silhouette.
+- **[studio3svg](https://github.com/zaydmulani09/studio3svg)** (MIT) converts `.studio3`
+  files to SVG. *BladePilot* opens them directly and cuts them; it is to read more of the
+  format next (layers, fills, the cut settings stored in a document).
+- **[py_silhouette](https://github.com/mossblaser/py_silhouette)** is a Python library for
+  driving a Portrait, with the registration-mark sequence BladePilot's documentation cites.
+  *BladePilot* is a complete app with its own protocol layer.
+- **[robocut](https://github.com/alpharesearch/robocut)** is an earlier Qt app for the Craft
+  Robo and the first Silhouette machines, unchanged since 2017. *BladePilot* is maintained and
+  covers the current machines.
+- **[craft-libs](https://github.com/storytold/craft-libs)** (MIT OR Apache-2.0) is not an
+  alternative: its `craft-plotter` and `craft-silhouette-studio` are the building blocks
+  BladePilot is made of, and facts BladePilot learns from USB captures go back there.
+
+The [roadmap](docs/ROADMAP.md) lists the open issues of these projects that BladePilot means to
+solve, and what Silhouette Studio does that BladePilot does not do yet.
 
 ## Trademarks
 

@@ -1,0 +1,55 @@
+{
+  "id": 1,
+  "name": "test-cut",
+  "format": "svg",
+  "pageMm": [
+    12.0,
+    12.0
+  ],
+  "bbox": [
+    0.0,
+    0.0,
+    12.0,
+    12.0
+  ],
+  "shapes": [
+    {
+      "d": "M0,0L12,0L12,12L0,12Z",
+      "stroke": null,
+      "fill": null,
+      "color": null
+    },
+    {
+      "d": "M6,2.97L9.5,9.03L2.5,9.03Z",
+      "stroke": null,
+      "fill": null,
+      "color": null
+    }
+  ],
+  "colors": [
+    {
+      "color": null,
+      "shapes": 2,
+      "lengthMm": 68.996
+    }
+  ],
+  "hull": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      12.0,
+      0.0
+    ],
+    [
+      12.0,
+      12.0
+    ],
+    [
+      0.0,
+      12.0
+    ]
+  ],
+  "warnings": []
+}

@@ -6,14 +6,17 @@
   import { displayColor } from '../lib/theme.svelte';
   import { fmtLength } from '../lib/format';
   import { colorName as nameOf } from '../lib/colors';
+  import { fromUnit, toUnit, unitLabel } from '../lib/format';
   import type { PassInfo, Settings } from '../lib/api/types';
   import Icon from './Icon.svelte';
+  import NumberField from './NumberField.svelte';
 
   const s = $derived(app.send);
   const plan = $derived(s?.plan ?? app.plan);
   const running = $derived(!!s && ['connecting', 'running', 'paused', 'finishing', 'stopping'].includes(s.phase));
   const usb = $derived(app.target !== 'virtual');
-  const canStart = $derived(!!plan && !app.planError && (!usb || app.understood));
+  const testing = $derived(s?.mode === 'test');
+  const canStart = $derived(!!plan && (testing ? !s?.error : !app.planError) && (!usb || app.understood));
   const percent = $derived(s && s.total > 0 ? Math.min(100, (s.sent / s.total) * 100) : 0);
   const passes = $derived(plan?.passes ?? []);
   const current = $derived(s && passes[s.pass] ? passes[s.pass] : null);
@@ -27,14 +30,13 @@
     return nameOf(color);
   }
 
-  function details(p: PassInfo): string {
-    const x = p.settings;
+  function details(x: Settings): string {
     const parts: string[] = [];
     if (x.force !== null) parts.push(`${t('settings.force')} ${x.force}`);
     if (x.speed !== null) parts.push(`${t('settings.speed')} ${x.speed}`);
     if (x.tool === 'blade' && x.depth !== null) parts.push(`${t('settings.depth')} ${x.depth}`);
     if (x.repeats > 1) parts.push(`${x.repeats}×`);
-    return parts.join(' · ');
+    return parts.join(' · ') || t('settings.machineHint');
   }
 
   function onKey(e: KeyboardEvent): void {
@@ -45,11 +47,11 @@
 <svelte:window onkeydown={onKey} />
 
 {#if s}
-  <div class="backdrop" role="presentation" onpointerdown={(e) => e.target === e.currentTarget && !running && app.closeSend()}>
+  <div class="backdrop" class:side={testing} role="presentation" onpointerdown={(e) => e.target === e.currentTarget && !running && app.closeSend()}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="send-title">
       <header>
-        <div class="title-icon"><Icon name="send" size={18} /></div>
-        <h2 id="send-title">{t('send.title')}</h2>
+        <div class="title-icon"><Icon name={testing ? 'testCut' : 'send'} size={18} /></div>
+        <h2 id="send-title">{testing ? t('test.title') : t('send.title')}</h2>
         {#if !running}
           <button class="icon-btn" aria-label={t('send.close')} onclick={() => app.closeSend()}><Icon name="close" /></button>
         {/if}
@@ -57,7 +59,28 @@
 
       {#if s.phase === 'setup'}
         <div class="content">
-          <div class="label">{t('send.target')}</div>
+          {#if testing && app.test}
+            <p class="lead">{t('test.body')}</p>
+            <div class="label">{t('test.settings')}</div>
+            <div class="test-settings">
+              <span class="swatch" class:none={!app.test.color} style={app.test.color ? `background: ${displayColor(app.test.color)}` : ''}></span>
+              <strong>{colorName(app.test.color)}</strong>
+              <span class="p-tool"><Icon name={app.test.settings.tool === 'pen' ? 'pen' : 'blade'} size={13} />{toolName(app.test.settings)}</span>
+              <span class="p-details">{details(app.test.settings)}</span>
+            </div>
+            <div class="label summary-label">{t('test.position')}</div>
+            <div class="test-pos">
+              <NumberField label="X" value={toUnit(app.test.x)} digits={1} unit={unitLabel()} onchange={(v) => app.moveTest(v === null ? null : fromUnit(v), null)} />
+              <NumberField label="Y" value={toUnit(app.test.y)} digits={1} unit={unitLabel()} onchange={(v) => app.moveTest(null, v === null ? null : fromUnit(v))} />
+              <button class="btn" onclick={() => app.nextTestSpot()}>{t('test.next')}</button>
+            </div>
+            {#if s.error}
+              <div class="error-box"><Icon name="alert" size={15} />{t('test.outside')}</div>
+            {/if}
+            <div class="label summary-label">{t('send.target')}</div>
+          {:else}
+            <div class="label">{t('send.target')}</div>
+          {/if}
           <div class="targets">
             <label class="target" class:on={app.target === 'virtual'}>
               <input type="radio" name="target" value="virtual" bind:group={app.target} />
@@ -79,6 +102,7 @@
             </label>
           {/if}
 
+          {#if !testing}
           <div class="label summary-label">{t('send.summary')}</div>
           <div class="summary">
             <div class="machine">
@@ -101,7 +125,7 @@
                       <span class="swatch" class:none={!p.color} style={p.color ? `background: ${displayColor(p.color)}` : ''}></span>
                       <span class="p-name">{colorName(p.color)}</span>
                       <span class="p-tool"><Icon name={p.settings.tool === 'pen' ? 'pen' : 'blade'} size={13} />{toolName(p)}</span>
-                      <span class="p-details">{details(p)}</span>
+                      <span class="p-details">{details(p.settings)}</span>
                     </div>
                   </li>
                 {/each}
@@ -110,10 +134,11 @@
               <div class="error-box"><Icon name="alert" size={15} />{t('send.noPlan', { reason: errorText(app.planError) })}</div>
             {/if}
           </div>
+          {/if}
         </div>
         <footer>
           <button class="btn" onclick={() => app.closeSend()}>{t('send.cancel')}</button>
-          <button class="btn primary lg" disabled={!canStart} onclick={() => app.startSend()}><Icon name="play" size={14} />{t('send.start')}</button>
+          <button class="btn primary lg" disabled={!canStart} onclick={() => app.startSend()}><Icon name="play" size={14} />{testing ? t('test.start') : t('send.start')}</button>
         </footer>
       {:else}
         <div class="content running">
@@ -121,7 +146,7 @@
             <div class="result {s.phase}">
               <div class="r-icon"><Icon name={s.phase === 'done' ? 'check' : s.phase === 'stopped' ? 'stop' : 'alert'} size={26} /></div>
               <h3>{s.phase === 'done' ? t('send.done') : s.phase === 'stopped' ? t('send.stopped') : t('send.failed')}</h3>
-              <p>{s.phase === 'done' ? t('send.doneBody') : s.phase === 'stopped' ? t('send.stoppedBody') : errorText(s.error)}</p>
+              <p>{s.phase === 'done' ? (testing ? t('test.doneBody') : t('send.doneBody')) : s.phase === 'stopped' ? t('send.stoppedBody') : errorText(s.error)}</p>
             </div>
           {:else if s.phase === 'paused' && s.pausedBefore !== null && current}
             <div class="change">
@@ -179,7 +204,11 @@
               <button class="btn" disabled={s.phase !== 'running' || s.pausing} onclick={() => app.control('pause')}><Icon name="pause" size={13} />{t('send.pause')}</button>
             {/if}
           {:else}
-            <button class="btn" onclick={() => app.startSend()}><Icon name="restart" size={15} />{t('send.again')}</button>
+            {#if testing}
+              <button class="btn" onclick={() => { app.nextTestSpot(); void app.startSend(); }}><Icon name="testCut" size={15} />{t('test.again')}</button>
+            {:else}
+              <button class="btn" onclick={() => app.startSend()}><Icon name="restart" size={15} />{t('send.again')}</button>
+            {/if}
             <span class="spacer"></span>
             <button class="btn primary" onclick={() => app.closeSend()}>{t('send.close')}</button>
           {/if}
@@ -199,6 +228,35 @@
     background: rgba(10, 16, 24, 0.42);
     backdrop-filter: blur(2px);
     animation: fade 0.15s ease-out;
+  }
+
+  .backdrop.side {
+    place-items: center end;
+    padding-right: 20px;
+    background: rgba(10, 16, 24, 0.12);
+    backdrop-filter: none;
+  }
+
+  .lead {
+    margin: 0 0 14px;
+    color: var(--text-2);
+  }
+
+  .test-settings {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 12.5px;
+  }
+
+  .test-pos {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    align-items: end;
+    gap: 10px;
   }
 
   .dialog {

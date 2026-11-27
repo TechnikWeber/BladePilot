@@ -38,13 +38,21 @@ pub struct Service {
     designs: Mutex<HashMap<u32, Arc<Design>>>,
     next_design: AtomicU32,
     job: Mutex<Option<Arc<JobControl>>>,
+    /// The test cut pattern's design id, once it is made.
+    test_id: Mutex<Option<u32>>,
     /// Pace of the virtual plotter for sent jobs, `None` for as fast as it goes.
     pub virtual_pace: Option<(f64, f64)>,
 }
 
 impl Default for Service {
     fn default() -> Self {
-        Service { designs: Mutex::default(), next_design: AtomicU32::new(1), job: Mutex::default(), virtual_pace: Some(VIRTUAL_PACE_MM_S) }
+        Service {
+            designs: Mutex::default(),
+            next_design: AtomicU32::new(1),
+            job: Mutex::default(),
+            test_id: Mutex::default(),
+            virtual_pace: Some(VIRTUAL_PACE_MM_S),
+        }
     }
 }
 
@@ -309,6 +317,19 @@ impl Service {
     pub fn import_design(&self, name: &str, bytes: &[u8]) -> Result<DesignInfo, ApiError> {
         let design = bladepilot_design::import(bytes, Some(name))?;
         Ok(self.keep(name, design))
+    }
+
+    /// The test cut pattern as a design (top-left corner at the page origin), kept once.
+    pub fn test_design(&self) -> DesignInfo {
+        let mut id = lock(&self.test_id);
+        if let Some(id) = *id
+            && let Some(design) = lock(&self.designs).get(&id)
+        {
+            return design_info(id, "test-cut", design);
+        }
+        let info = self.keep("test-cut", bladepilot_job::test_pattern((0.0, 0.0)));
+        *id = Some(info.id);
+        info
     }
 
     /// Forgets a design no item on the mat uses any more.
@@ -836,6 +857,29 @@ mod tests {
         let design = Service::new().import_design("demo.svg", &demo).unwrap();
         assert_eq!(design.colors.len(), 3, "black, red and blue");
         check_file(&format!("{ui}/mock/demo.json"), &(serde_json::to_string_pretty(&design).unwrap() + "\n"));
+        let test = Service::new().test_design();
+        check_file(&format!("{ui}/mock/test-cut.json"), &(serde_json::to_string_pretty(&test).unwrap() + "\n"));
+    }
+
+    #[test]
+    fn the_test_cut_is_one_design_placed_like_any_other() {
+        let service = Service::new();
+        let test = service.test_design();
+        assert_eq!(service.test_design().id, test.id, "made once");
+        assert_eq!(test.bbox, [0.0, 0.0, 12.0, 12.0]);
+        let job = JobRequest {
+            machine: "portrait4".into(),
+            mat: "8.5x12".into(),
+            items: vec![PlacedItem { design: test.id, matrix: [1.0, 0.0, 0.0, 1.0, 190.0, 280.0] }],
+            by_color: false,
+            manual_order: false,
+            settings: Settings { force: Some(8), ..Settings::default() },
+            colors: Vec::new(),
+        };
+        let plan = service.plan(&job).unwrap();
+        assert_eq!(plan.passes.len(), 1);
+        assert_eq!(plan.passes[0].paths, 2);
+        assert_eq!(plan.passes[0].settings.force, Some(8));
     }
 
     #[test]

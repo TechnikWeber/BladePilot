@@ -30,6 +30,7 @@ export const tauriBackend: Backend = {
   openPath: (path) => invoke('open_design', { path }),
   openFile: async (file) => importBytes(file.name, new Uint8Array(await file.arrayBuffer())),
   openDemo: () => importBytes('demo.svg', new TextEncoder().encode(demoSvg)),
+  testDesign: () => invoke('test_design'),
   forgetDesign: (id) => invoke('forget_design', { id }),
   planJob: (job) => invoke('plan_job', { job }),
   simulateJob: (job) => invoke('simulate_job', { job }),

@@ -45,6 +45,8 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Colour list: tool and settings per colour, skip a colour, pass order by drag, pauses
       between passes and for tool changes
 - [x] Animated preview of the cutting order from the virtual plotter
+- [x] Test cut: a 12 mm square with a triangle inside, with one pass's settings, on the next
+      free spot of the mat; also `bladepilot test-cut`
 - [x] Send dialog with machine status, progress, pause, stop and tool changes
 - [x] English and German, light and dark, following the system
 - [x] Mock backend: the front end runs in a browser, for screenshots and a later web demo
@@ -72,7 +74,11 @@ the virtual plotter first, then checked against the real machine on a
 - [ ] Material profiles with a test cut and per-machine corrections, chosen per colour
 - [ ] Long jobs on roll media without a mat, tiled when longer than the machine allows
 - [ ] Inkscape extension "Send to BladePilot"
-- [ ] Bluetooth
+- [ ] Bluetooth. Portrait 2 and newer have it, as Bluetooth Classic (RFCOMM, a serial port once
+      paired) and Bluetooth Low Energy, according to inkscape-silhouette's documentation. First
+      a serial transport for the paired port (a COM port on Windows, `/dev/rfcomm*` on Linux,
+      `/dev/cu.*` on macOS), then BLE; the hardware test day checks what the Portrait offers.
+- [ ] Move the head with the arrow keys before a job or a test cut
 - [ ] DXF and PDF import
 - [ ] Cameo-only features as experimental: second tool holder, electrostatic mat
 
@@ -96,6 +102,28 @@ for everyone:
 | Open `.studio` / `.studio3` | cuthulhu #347 | done for outlines; Phase 2 |
 | Material-first profiles, test cut | cuthulhu #310 | Later |
 | Pause, resume, retry a pass | cuthulhu #306 | done: pause and resume; a pass is retried by leaving the others out |
+
+## What Silhouette Studio does that BladePilot does not (yet)
+
+From the vendor's public product information. BladePilot is cutting software: designs come
+from Inkscape or any other editor, or from Silhouette Studio files.
+
+| Silhouette Studio | BladePilot |
+|---|---|
+| Test cut | done |
+| Cut by line colour; by fill colour; by layer | line colour, else fill colour: done; layers: phase 2 |
+| Material list with blade depth, force, speed and passes per material | later: own material profiles with a test cut (no vendor tables) |
+| Print and cut with registration marks, PixScan | registration marks: phase 4; PixScan: not planned |
+| Move the blade to a start point, feed and unload from the software | later; load and unload stay on the machine's buttons |
+| Roller track enhancing, double cut, overcut | repeats and overcut: done; track enhancing: later |
+| Tools: ratchet, kraft, rotary, deep-cut and punch blades, sketch pens, embossing (Curio), heat pen | blade and pen; tool-specific settings later |
+| Two tool holders, electrostatic mat (Cameo) | later, experimental |
+| Long cuts from the roll, tiling | later |
+| Weeding lines and boxes, replicate and nesting to save material | later |
+| Bluetooth | later (see above) |
+| Design tools: shapes, text, trace, offset, weld, knife, sketch fills | not planned beyond offset and trace for print and cut; use Inkscape |
+| Design store, library, cloud | out of scope |
+| Firmware updates | out of scope |
 
 ## Out of scope
 

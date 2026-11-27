@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 – 2026-11-27
+
+- **Test cut:** a 12 mm square with a triangle inside, cut with one pass's settings to try
+  force and depth before the real job. In the desktop app every pass has a **Test cut** button;
+  the test goes to the next free spot of the mat, which the mat shows, and the next test lands
+  beside it. On the command line: `bladepilot test-cut --at X,Y` with the usual settings.
+- The README says what BladePilot does differently from the related projects, and the roadmap
+  what Silhouette Studio does that BladePilot does not do yet.
+- The hardware test day checks the test cut and what the machine offers over Bluetooth.
+
 ## 0.2.0 – 2026-11-27
 
 The desktop app. Cutting on a real machine has still not been tested: send to the virtual

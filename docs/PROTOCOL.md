@@ -81,7 +81,10 @@ positions manually. The sender waits until the status reads ready before it send
 - The exact version strings of the Portrait 3 and 4, and whether both answer `ESC NAK`.
 - Force and speed ranges of the Portrait 3 and 4.
 - How much the machine buffers and how it signals that it is full.
-- What Silhouette Studio sends that BladePilot does not, for the same job.
+- What Silhouette Studio sends that BladePilot does not, for the same job, and for its test
+  cut.
+- What the machine offers over Bluetooth (a Classic serial port, BLE services), and whether it
+  speaks the same GP-GL there.
 
 ## Sources
 

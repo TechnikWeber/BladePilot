@@ -33,6 +33,8 @@ enum Command {
     },
     /// Plan a design, then cut it, draw it with the virtual plotter or print the program
     Cut(CutArgs),
+    /// Cut a small test pattern (a 12 mm square with a triangle inside) to try settings
+    TestCut(TestCutArgs),
     /// Read a USB capture (Wireshark pcap/pcapng with USBPcap or usbmon) and show what the machine got
     Replay(ReplayArgs),
 }
@@ -62,18 +64,48 @@ struct ReplayArgs {
 struct CutArgs {
     /// SVG, .studio or .studio3 file
     file: PathBuf,
-    /// Machine id, see `bladepilot machines`
-    #[arg(long, short, default_value = "portrait3")]
-    machine: String,
-    /// Mat: 8x12, 8.5x12, 12x12, 12x24, 15x15, 24x24 or none (default: the machine's usual mat)
-    #[arg(long)]
-    mat: Option<String>,
+    #[command(flatten)]
+    target: MachineArgs,
     /// Where the page's top-left corner lands on the mat, in mm: X,Y
     #[arg(long, value_parser = parse_pair, default_value = "0,0", allow_hyphen_values = true)]
     offset: (f64, f64),
     /// One pass per colour instead of one pass for everything
     #[arg(long)]
     by_color: bool,
+    /// With --by-color: shapes of this colour are drawn with a pen (repeatable), e.g. "#ff0000"
+    #[arg(long, value_name = "HEX", requires = "by_color")]
+    pen_color: Vec<String>,
+    #[command(flatten)]
+    tool: ToolArgs,
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Args)]
+struct TestCutArgs {
+    /// Where the test square's top-left corner goes on the mat, in mm: X,Y
+    #[arg(long, value_parser = parse_pair, default_value = "5,5", allow_hyphen_values = true)]
+    at: (f64, f64),
+    #[command(flatten)]
+    target: MachineArgs,
+    #[command(flatten)]
+    tool: ToolArgs,
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Args)]
+struct MachineArgs {
+    /// Machine id, see `bladepilot machines`
+    #[arg(long, short, default_value = "portrait3")]
+    machine: String,
+    /// Mat: 8x12, 8.5x12, 12x12, 12x24, 15x15, 24x24 or none (default: the machine's usual mat)
+    #[arg(long)]
+    mat: Option<String>,
+}
+
+#[derive(Args)]
+struct ToolArgs {
     /// Force in the machine's steps (default: the machine's setting)
     #[arg(long)]
     force: Option<u32>,
@@ -89,15 +121,16 @@ struct CutArgs {
     /// Draw with a pen instead of cutting with a blade
     #[arg(long)]
     pen: bool,
-    /// With --by-color: shapes of this colour are drawn with a pen (repeatable), e.g. "#ff0000"
-    #[arg(long, value_name = "HEX", requires = "by_color")]
-    pen_color: Vec<String>,
     /// Run the blade this far past sharp corners, mm (0-2)
     #[arg(long, default_value_t = 0.0)]
     overcut: f64,
     /// Blade swivel offset, mm
     #[arg(long, default_value_t = 0.9)]
     blade_offset: f64,
+}
+
+#[derive(Args)]
+struct OutputArgs {
     /// Print the program instead of cutting
     #[arg(long, conflicts_with = "simulate")]
     dry_run: bool,
@@ -138,6 +171,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Devices => devices(),
         Command::Inspect { file } => inspect(&file),
         Command::Cut(args) => cut(&args),
+        Command::TestCut(args) => test_cut(&args),
         Command::Replay(args) => replay(&args),
     }
 }
@@ -209,28 +243,22 @@ fn inspect(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn spec_for(args: &CutArgs) -> Result<JobSpec> {
-    let machine: &'static Machine =
-        bladepilot_machines::by_id(&args.machine).with_context(|| format!("unknown machine `{}`; `bladepilot machines` lists them", args.machine))?;
+fn spec_for(target: &MachineArgs, tool: &ToolArgs) -> Result<JobSpec> {
+    let machine: &'static Machine = bladepilot_machines::by_id(&target.machine)
+        .with_context(|| format!("unknown machine `{}`; `bladepilot machines` lists them", target.machine))?;
     let mut spec = JobSpec::new(machine);
-    if let Some(mat) = &args.mat {
+    if let Some(mat) = &target.mat {
         spec.mat = Mat::parse(mat).with_context(|| format!("unknown mat `{mat}`"))?;
     }
-    spec.offset_mm = args.offset;
-    spec.grouping = if args.by_color { Grouping::ByColor } else { Grouping::Single };
     spec.settings = CutSettings {
-        force: args.force,
-        speed: args.speed,
-        depth: args.depth,
-        passes: args.passes,
-        pen: args.pen,
-        overcut_mm: args.overcut,
-        blade_offset_mm: args.blade_offset,
+        force: tool.force,
+        speed: tool.speed,
+        depth: tool.depth,
+        passes: tool.passes,
+        pen: tool.pen,
+        overcut_mm: tool.overcut,
+        blade_offset_mm: tool.blade_offset,
     };
-    for hex in &args.pen_color {
-        let color = Rgb::parse(hex).with_context(|| format!("`{hex}` is not a colour like #ff0000"))?;
-        spec.color_settings.insert(color, CutSettings { pen: true, ..spec.settings });
-    }
     Ok(spec)
 }
 
@@ -260,13 +288,31 @@ fn cut(args: &CutArgs) -> Result<()> {
     for w in &design.warnings {
         eprintln!("note      {w}");
     }
-    let spec = spec_for(args)?;
+    let mut spec = spec_for(&args.target, &args.tool)?;
+    spec.offset_mm = args.offset;
+    spec.grouping = if args.by_color { Grouping::ByColor } else { Grouping::Single };
+    for hex in &args.pen_color {
+        let color = Rgb::parse(hex).with_context(|| format!("`{hex}` is not a colour like #ff0000"))?;
+        spec.color_settings.insert(color, CutSettings { pen: true, ..spec.settings });
+    }
     let plan = bladepilot_job::plan(&design, &spec)?;
-    print_plan(&plan);
-    let program = bladepilot_job::encode(&plan)?;
+    execute(&plan, &args.output)
+}
 
-    if args.dry_run {
-        match &args.bytes {
+fn test_cut(args: &TestCutArgs) -> Result<()> {
+    let spec = spec_for(&args.target, &args.tool)?;
+    let plan = bladepilot_job::plan(&bladepilot_job::test_pattern(args.at), &spec)?;
+    eprintln!("test cut  12 mm square with a triangle inside at {:.1}, {:.1} mm", args.at.0, args.at.1);
+    execute(&plan, &args.output)
+}
+
+/// Prints the plan, then prints the program, runs it on the virtual plotter or sends it.
+fn execute(plan: &Plan, output: &OutputArgs) -> Result<()> {
+    print_plan(plan);
+    let program = bladepilot_job::encode(plan)?;
+
+    if output.dry_run {
+        match &output.bytes {
             Some(path) => {
                 std::fs::write(path, program.to_stream()).with_context(|| format!("writing {}", path.display()))?;
                 eprintln!("wrote     {} ({} bytes)", path.display(), program.to_stream().len());
@@ -281,7 +327,7 @@ fn cut(args: &CutArgs) -> Result<()> {
         return Ok(());
     }
 
-    if let Some(svg) = &args.simulate {
+    if let Some(svg) = &output.simulate {
         let plotter = VirtualPlotter::new(Config::new(plan.machine));
         let mut session = Session::instant(SimTransport::new(plotter));
         session.run(&program, |_| {}).context("virtual plotter")?;
@@ -299,10 +345,10 @@ fn cut(args: &CutArgs) -> Result<()> {
         return Ok(());
     }
 
-    if !args.experimental_usb {
+    if !output.experimental_usb {
         bail!("cutting on a real machine is not released yet: use --dry-run or --simulate FILE.svg (or --experimental-usb on hardware test days)");
     }
-    send_usb(&plan, &program)
+    send_usb(plan, &program)
 }
 
 fn tool_name(pen: bool) -> &'static str {

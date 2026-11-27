@@ -62,16 +62,32 @@ importer.
 |---|---|---|---|
 | T0 | none | Connect, load and unload the mat, wait 30 s | `devices` |
 | T1 | 20 × 20 mm square at X 10, Y 10 | Sketch pen, default settings | `cut hardware-tests\T1-square.svg --pen` |
-| T2 | as T1 | AutoBlade on paper: note depth, force, speed | `cut hardware-tests\T1-square.svg --depth D --force F --speed S` |
+| T2 | as T1 | AutoBlade on paper: note depth, force, speed | `cut hardware-tests\T1-square.svg --depth D --force F --speed S`; to try settings first: `test-cut --at 150,10 --depth D --force F --speed S` |
 | T3 | 40 × 40 mm square at X 5, Y 5, 20 mm circle in its centre | AutoBlade on paper | `cut hardware-tests\T3-label.svg` with T2's settings |
 | T4 | as T3, circle red, square black | Cut by line colour: red sketch pen, black AutoBlade | `cut hardware-tests\T4-two-colours.svg --by-color --pen-color "#ff0000"`; it draws the circle, lifts the pen and waits: put the AutoBlade in, press Enter |
 | T5 | 30 mm circle with registration marks | Print and cut: print the sheet, load it, cut | not yet: Studio only |
 | T6 | as T2 | Start, cancel after about a second | Ctrl+C after about a second |
 | T7 | as T4 | not needed | Optional, with the desktop app (`BladePilot-Desktop-…-windows-x64-setup.exe` from the releases): open `T4-two-colours.svg`, set red to Pen, choose the machine under Connection, Send; pause once, then Stop in a second run |
+| T8 | a test cut | Send panel, **Test Cut** with T2's settings | `test-cut --depth D --force F --speed S` |
 
 Add `--machine portrait4` for a Portrait 4, and `--experimental-usb` to send to the machine.
 Close Silhouette Studio's connection (or Studio itself) before BladePilot sends, and the other
 way round: only one program can talk to the machine at a time.
+
+## Bluetooth (optional, no capture)
+
+Portrait 2 and newer have Bluetooth. Note for [PROTOCOL.md](PROTOCOL.md) what the machine
+offers:
+
+1. Windows: **Settings → Bluetooth & devices → Add device → Bluetooth**. Note the name the
+   machine shows up with and whether pairing asks for a PIN.
+2. After pairing, open **Device Manager → Ports (COM & LPT)**: a "Standard Serial over
+   Bluetooth link" port means Bluetooth Classic with a serial profile. Note the COM number.
+3. Note whether Silhouette Studio offers the machine over Bluetooth, and whether a job runs
+   that way.
+
+On the Linux laptop the same with `bluetoothctl`: `scan on`, note the address, then
+`info ADDRESS` lists the services (UUIDs) the machine advertises.
 
 ## Capturing
 

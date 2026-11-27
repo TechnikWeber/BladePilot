@@ -155,6 +155,18 @@ const de: Record<Key, string> = {
   'send.passes': 'Durchgänge',
   'send.noPlan': 'Erst den Auftrag richten: {reason}',
 
+  'test.button': 'Testschnitt',
+  'test.buttonHint': 'Ein kleines Quadrat mit Dreieck schneiden, um diese Einstellungen zu probieren',
+  'test.title': 'Testschnitt',
+  'test.body': 'Schneidet ein 12-mm-Quadrat mit einem Dreieck darin, mit den Einstellungen unten. Lässt sich das Dreieck sauber herauslösen und bleibt die Trägerfolie heil, passen sie zum Material.',
+  'test.settings': 'Einstellungen',
+  'test.position': 'Position auf der Matte',
+  'test.next': 'Nächste freie Stelle',
+  'test.start': 'Test schneiden',
+  'test.again': 'Noch ein Test daneben',
+  'test.doneBody': 'Löse das Dreieck heraus. Geht es sauber und ist die Trägerfolie heil, passen die Einstellungen; sonst Druck oder Tiefe ändern und noch einmal testen.',
+  'test.outside': 'Dort passt der Test nicht hin: Wähl eine Stelle im Schneidbereich.',
+
   'tool.blade': 'Klinge',
   'tool.pen': 'Stift',
 

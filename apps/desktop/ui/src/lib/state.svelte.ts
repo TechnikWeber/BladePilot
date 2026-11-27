@@ -48,6 +48,8 @@ export type SendPhase = 'setup' | 'connecting' | 'running' | 'paused' | 'finishi
 
 export interface SendState {
   phase: SendPhase;
+  /** The designs on the mat, or the test cut. */
+  mode: 'job' | 'test';
   target: Target;
   sent: number;
   total: number;
@@ -100,6 +102,18 @@ export function buildTimeline(sim: Simulation | null | undefined): Timeline | nu
   });
   return { strokes, total: clock, passStarts };
 }
+
+/** Where the next test cut goes and with which settings. */
+export interface TestCut {
+  x: number;
+  y: number;
+  settings: Settings;
+  /** The colour whose settings are tried, for the dialog. */
+  color: string | null;
+}
+
+/** Edge of the test pattern, mm (as `bladepilot_job::TEST_SIZE_MM`). */
+export const TEST_SIZE_MM = 12;
 
 export interface Toast {
   id: number;
@@ -183,6 +197,10 @@ class AppState {
 
   preview = $state<PreviewState | null>(null);
   send = $state<SendState | null>(null);
+  test = $state<TestCut | null>(null);
+  testDesign = $state<DesignInfo | null>(null);
+  /** Test cuts already made this session: the next one goes elsewhere. */
+  private testSpots: { x: number; y: number }[] = [];
   toasts = $state<Toast[]>([]);
   dropping = $state(false);
 
@@ -300,6 +318,22 @@ class AppState {
         const p = this.prefsOf(color);
         return { color, settings: $state.snapshot(p.settings), skip: p.skip, pauseBefore: p.pauseBefore };
       }),
+    };
+  });
+
+  /** The test cut as a job: the pattern alone, one pass with the chosen settings. */
+  testJob = $derived.by((): JobRequest | null => {
+    const test = this.test;
+    const design = this.testDesign;
+    if (!test || !design || !this.machine || !this.mat) return null;
+    return {
+      machine: this.machine.id,
+      mat: this.mat.id,
+      items: [{ design: design.id, matrix: [1, 0, 0, 1, test.x, test.y] }],
+      byColor: false,
+      manualOrder: false,
+      settings: $state.snapshot(test.settings),
+      colors: [],
     };
   });
 
@@ -623,23 +657,87 @@ class AppState {
     this.preview = null;
   }
 
+  // Test cut
+
+  /** A free 12 mm spot inside the cutting area, from the top right, clear of designs and earlier tests. */
+  freeTestSpot(): { x: number; y: number } {
+    const size = TEST_SIZE_MM;
+    const gap = 4;
+    const area = this.area;
+    const taken: Box[] = [
+      ...Object.values(this.boxes),
+      ...this.testSpots.map((p) => ({ x0: p.x, y0: p.y, x1: p.x + size, y1: p.y + size })),
+    ];
+    for (let y = gap; y + size <= area.h - gap; y += size + gap) {
+      for (let x = area.w - size - gap; x >= gap; x -= size + gap) {
+        const b = { x0: x - 2, y0: y - 2, x1: x + size + 2, y1: y + size + 2 };
+        if (taken.every((o) => o.x1 <= b.x0 || o.x0 >= b.x1 || o.y1 <= b.y0 || o.y0 >= b.y1)) return { x, y };
+      }
+    }
+    return { x: gap, y: gap };
+  }
+
+  /** Opens the send dialog for a test cut with these settings. */
+  async openTestCut(settings: Settings, color: string | null): Promise<void> {
+    try {
+      if (!this.testDesign) this.testDesign = await backend.testDesign();
+    } catch (e) {
+      this.toast(errorText(e));
+      return;
+    }
+    const spot = this.test ?? this.freeTestSpot();
+    this.test = { x: spot.x, y: spot.y, settings: { ...$state.snapshot(settings) }, color };
+    this.preview = null;
+    this.send = { phase: 'setup', mode: 'test', target: this.targetValue(), sent: 0, total: 0, pass: 0, pausedBefore: null, pausing: false, version: null, error: null, plan: null };
+    await this.planTest();
+  }
+
+  async planTest(): Promise<void> {
+    const job = this.testJob;
+    const send = this.send;
+    if (!job || !send || send.mode !== 'test') return;
+    try {
+      send.plan = await backend.planJob(job);
+      send.error = null;
+    } catch (e) {
+      send.plan = null;
+      send.error = e as ApiError;
+    }
+  }
+
+  moveTest(x: number | null, y: number | null): void {
+    if (!this.test) return;
+    if (x !== null) this.test.x = Math.max(0, Math.min(this.area.w - TEST_SIZE_MM, x));
+    if (y !== null) this.test.y = Math.max(0, Math.min(this.area.h - TEST_SIZE_MM, y));
+    void this.planTest();
+  }
+
+  nextTestSpot(): void {
+    if (!this.test) return;
+    this.testSpots.push({ x: this.test.x, y: this.test.y });
+    const spot = this.freeTestSpot();
+    this.test.x = spot.x;
+    this.test.y = spot.y;
+    void this.planTest();
+  }
+
   // Sending
 
   openSend(): void {
     if (!this.job) return;
     this.preview = null;
-    this.send = { phase: 'setup', target: this.targetValue(), sent: 0, total: 0, pass: 0, pausedBefore: null, pausing: false, version: null, error: null, plan: this.plan };
+    this.send = { phase: 'setup', mode: 'job', target: this.targetValue(), sent: 0, total: 0, pass: 0, pausedBefore: null, pausing: false, version: null, error: null, plan: this.plan };
   }
 
   async startSend(): Promise<void> {
-    const job = this.job;
     const send = this.send;
+    const job = send?.mode === 'test' ? this.testJob : this.job;
     if (!job || !send) return;
     send.target = this.targetValue();
-    send.plan = this.plan;
+    if (send.mode === 'job') send.plan = this.plan;
     send.phase = 'connecting';
     send.sent = 0;
-    send.total = this.plan?.bytes ?? 0;
+    send.total = send.plan?.bytes ?? 0;
     send.error = null;
     send.pass = 0;
     try {
@@ -686,6 +784,8 @@ class AppState {
       case 'done':
         s.phase = 'done';
         s.sent = s.total;
+        // The next test goes next to this one.
+        if (s.mode === 'test' && this.test) this.testSpots.push({ x: this.test.x, y: this.test.y });
         break;
       case 'stopped':
         s.phase = 'stopped';

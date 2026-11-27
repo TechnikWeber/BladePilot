@@ -59,6 +59,11 @@ async fn import_design(service: Shared<'_>, name: String, bytes: Vec<u8>) -> Res
 }
 
 #[tauri::command]
+fn test_design(service: Shared<'_>) -> DesignInfo {
+    service.test_design()
+}
+
+#[tauri::command]
 fn forget_design(service: Shared<'_>, id: u32) {
     service.forget_design(id);
 }
@@ -114,6 +119,7 @@ pub fn run() {
             startup_files,
             open_design,
             import_design,
+            test_design,
             forget_design,
             plan_job,
             simulate_job,
