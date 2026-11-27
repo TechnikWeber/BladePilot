@@ -80,7 +80,9 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Bluetooth on Windows and Linux: the same GP-GL over Bluetooth Classic (RFCOMM channel 1),
       no pairing; a search in the command line (`devices --bluetooth`) and the desktop app
 - [ ] Bluetooth on macOS (IOBluetooth); until then the app says to use USB
-- [ ] Signed Windows builds: Smart App Control blocks a fresh unsigned release
+- [ ] Signed Windows builds: Smart App Control blocks a fresh unsigned release, above all a
+      browser download (seen with 0.4.0's command line; the desktop installer got through).
+      Free for open source through the SignPath Foundation, signing in the release workflow
 - [ ] Move the head with the arrow keys before a job or a test cut
 - [ ] DXF and PDF import
 - [ ] Cameo-only features as experimental: second tool holder, electrostatic mat
