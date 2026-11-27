@@ -473,6 +473,8 @@ impl Service {
                     None => Session::instant(Box::new(SimTransport::new(plotter)) as Box<dyn Transport + Send>),
                 };
                 session.poll_interval = session.poll_interval.min(Duration::from_millis(50));
+                // The paced virtual plotter has done its moves when a write returns.
+                session.settle = Duration::ZERO;
                 // The virtual plotter always reports an AutoBlade: no tool check.
                 drive(&mut session, p, control, emit, false)
             }

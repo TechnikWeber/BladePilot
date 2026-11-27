@@ -201,6 +201,10 @@ pub struct Session<T: Transport> {
     pub marks_timeout: Duration,
     /// How long the machine may take to finish after the last byte.
     pub finish_timeout: Duration,
+    /// After sending, how long a machine that never reported moving must stay ready before the
+    /// job counts as done. Right after a write it may still answer "ready" before it starts:
+    /// over Bluetooth replies come back within 20 ms.
+    pub settle: Duration,
     /// Bytes that arrived after the first ETX of a reply; dropped before the next query.
     spare: Vec<u8>,
 }
@@ -213,13 +217,14 @@ impl<T: Transport> Session<T> {
             reply_timeout: Duration::from_secs(3),
             marks_timeout: Duration::from_secs(120),
             finish_timeout: Duration::from_secs(60 * 60),
+            settle: Duration::from_secs(3),
             spare: Vec::new(),
         }
     }
 
     /// A session that never sleeps, for the virtual plotter.
     pub fn instant(transport: T) -> Session<T> {
-        Session { poll_interval: Duration::ZERO, ..Session::new(transport) }
+        Session { poll_interval: Duration::ZERO, settle: Duration::ZERO, ..Session::new(transport) }
     }
 
     pub fn transport(&self) -> &T {
@@ -306,6 +311,26 @@ impl<T: Transport> Session<T> {
         }
     }
 
+    /// Waits until the machine has done what it was sent: a ready status counts once the machine
+    /// was seen moving, or after [`Session::settle`] without moving.
+    fn wait_done(&mut self) -> Result<(), Error> {
+        let start = Instant::now();
+        let mut moved = false;
+        loop {
+            match self.status()? {
+                Status::Moving => moved = true,
+                Status::Ready if moved || start.elapsed() >= self.settle => return Ok(()),
+                Status::Ready => {}
+                Status::Unloaded => return Err(Error::NoMedia),
+                Status::Unknown(byte) => return Err(Error::UnknownStatus(byte)),
+            }
+            if start.elapsed() >= self.finish_timeout {
+                return Err(Error::Timeout);
+            }
+            std::thread::sleep(self.poll_interval);
+        }
+    }
+
     /// Runs a whole program: initialise, wait until ready, send, wait for the marks when the job
     /// has registration, send the rest, wait until the machine is done.
     pub fn run(&mut self, program: &Program, progress: impl FnMut(Progress)) -> Result<(), Error> {
@@ -350,7 +375,7 @@ impl<T: Transport> Session<T> {
             other => other?,
         }
         progress(Progress::Finishing);
-        self.wait_ready(self.finish_timeout)?;
+        self.wait_done()?;
         progress(Progress::Done);
         Ok(())
     }
@@ -436,7 +461,7 @@ impl<T: Transport> Session<T> {
 
     /// Waits until the machine has done what it got, then until the job is resumed or stopped.
     fn hold(&mut self, control: &JobControl, progress: &mut impl FnMut(Progress), before_pass: Option<usize>) -> Result<(), Error> {
-        self.wait_ready(self.finish_timeout)?;
+        self.wait_done()?;
         progress(Progress::Paused { before_pass });
         let nap = self.poll_interval.max(Duration::from_millis(10));
         loop {
@@ -459,7 +484,7 @@ impl<T: Transport> Session<T> {
         if !tail.is_empty() {
             self.transport.write_all(&craft_plotter::delimit(tail))?;
         }
-        self.wait_ready(self.finish_timeout)
+        self.wait_done()
     }
 }
 
