@@ -21,7 +21,7 @@ import type {
   Tool,
 } from './api/types';
 import { type Box, type Placement, designSize, inside, normalizeAngle, placedBox, placementMatrix, union } from './geometry';
-import { errorText } from './i18n/index.svelte';
+import { errorText, t } from './i18n/index.svelte';
 
 export interface Item extends Placement {
   id: number;
@@ -86,19 +86,19 @@ const PREVIEW_LIFT_MS = 60;
 
 export function buildTimeline(sim: Simulation | null | undefined): Timeline | null {
   if (!sim) return null;
-  let t = 0;
+  let clock = 0;
   const passStarts: number[] = [];
   const strokes = sim.strokes.map((s) => {
     const cum = [0];
     for (let k = 2; k < s.points.length; k += 2) cum.push(cum[cum.length - 1] + Math.hypot(s.points[k] - s.points[k - 2], s.points[k + 1] - s.points[k - 1]));
     const len = cum[cum.length - 1];
     const dur = (len / (s.cut ? PREVIEW_CUT_MM_S : PREVIEW_TRAVEL_MM_S)) * 1000 + (s.cut ? PREVIEW_LIFT_MS : 0);
-    if (s.pass !== null && passStarts[s.pass] === undefined) passStarts[s.pass] = t;
-    const entry = { cut: s.cut, pass: s.pass, points: s.points, cum, t0: t, dur };
-    t += dur;
+    if (s.pass !== null && passStarts[s.pass] === undefined) passStarts[s.pass] = clock;
+    const entry = { cut: s.cut, pass: s.pass, points: s.points, cum, t0: clock, dur };
+    clock += dur;
     return entry;
   });
-  return { strokes, total: t, passStarts };
+  return { strokes, total: clock, passStarts };
 }
 
 export interface Toast {
@@ -375,7 +375,7 @@ class AppState {
   toast(text: string, kind: Toast['kind'] = 'error'): void {
     const id = nextToastId++;
     this.toasts.push({ id, text, kind });
-    setTimeout(() => (this.toasts = this.toasts.filter((t) => t.id !== id)), kind === 'error' ? 7000 : 4000);
+    setTimeout(() => (this.toasts = this.toasts.filter((toast) => toast.id !== id)), kind === 'error' ? 7000 : 4000);
   }
 
   // History
@@ -414,6 +414,10 @@ class AppState {
 
   /** Puts a freshly opened design on the mat: where its page says when that fits, else top left. */
   place(design: DesignInfo): void {
+    if (!design.shapes.length) {
+      this.toast(`${t('error.open', { name: design.name })}: ${t('error.nothingInFile')}`);
+      return;
+    }
     this.designs[design.id] = design;
     const { w, h } = designSize(design);
     const [x0, y0] = design.bbox;
@@ -443,7 +447,8 @@ class AppState {
       this.checkpoint();
       for (const d of designs) this.place(d);
     } catch (e) {
-      this.toast(name ? `${errorText(e)}` : errorText(e));
+      const file = name?.split(/[\\/]/).pop();
+      this.toast(file ? `${t('error.open', { name: file })}: ${errorText(e)}` : errorText(e));
     }
   }
 

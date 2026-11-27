@@ -179,6 +179,7 @@ const de: Record<Key, string> = {
   'error.wrongMachine': 'Die angeschlossene Maschine ist ein anderes Modell als das gewählte.',
   'error.mockStudio': 'Die Browser-Demo öffnet nur SVG-Dateien; die Desktop-App öffnet auch Silhouette-Studio-Dateien.',
   'error.generic': 'Etwas ist schiefgegangen: {message}',
+  'error.nothingInFile': 'sie enthält nichts, was sich schneiden lässt',
   'error.open': '{name} ließ sich nicht öffnen',
 
   'color.black': 'Schwarz',

@@ -177,6 +177,7 @@ const en = {
   'error.wrongMachine': 'The connected machine is a different model than the one chosen.',
   'error.mockStudio': 'The browser demo opens SVG files only; the desktop app opens Silhouette Studio files too.',
   'error.generic': 'Something went wrong: {message}',
+  'error.nothingInFile': 'it contains nothing that can be cut',
   'error.open': 'Could not open {name}',
 
   'color.black': 'Black',

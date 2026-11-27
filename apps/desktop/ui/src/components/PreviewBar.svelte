@@ -110,6 +110,7 @@
     width: min(680px, calc(100% - 32px));
     padding: 10px 12px 10px 10px;
     border-radius: 14px;
+    background: var(--panel);
     background: color-mix(in srgb, var(--panel) 94%, transparent);
     backdrop-filter: blur(10px);
     border: 1px solid var(--border);

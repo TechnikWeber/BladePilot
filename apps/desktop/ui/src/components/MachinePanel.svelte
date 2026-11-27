@@ -167,6 +167,7 @@
 
   .dot.ok {
     background: var(--ok);
+    box-shadow: 0 0 0 3px rgba(34, 160, 80, 0.22);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
   }
 

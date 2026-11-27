@@ -67,6 +67,7 @@ importer.
 | T4 | as T3, circle red, square black | Cut by line colour: red sketch pen, black AutoBlade | `cut hardware-tests\T4-two-colours.svg --by-color --pen-color "#ff0000"`; it draws the circle, lifts the pen and waits: put the AutoBlade in, press Enter |
 | T5 | 30 mm circle with registration marks | Print and cut: print the sheet, load it, cut | not yet: Studio only |
 | T6 | as T2 | Start, cancel after about a second | Ctrl+C after about a second |
+| T7 | as T4 | not needed | Optional, with the desktop app (`BladePilot-Desktop-…-windows-x64-setup.exe` from the releases): open `T4-two-colours.svg`, set red to Pen, choose the machine under Connection, Send; pause once, then Stop in a second run |
 
 Add `--machine portrait4` for a Portrait 4, and `--experimental-usb` to send to the machine.
 Close Silhouette Studio's connection (or Studio itself) before BladePilot sends, and the other

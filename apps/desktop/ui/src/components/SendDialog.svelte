@@ -441,6 +441,7 @@
   .progress .fill {
     height: 100%;
     border-radius: 5px;
+    background: var(--accent);
     background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #60a5fa));
     transition: width 0.25s ease-out;
   }
@@ -530,6 +531,7 @@
     height: 54px;
     margin-bottom: 10px;
     border-radius: 50%;
+    background: rgba(34, 160, 80, 0.16);
     background: color-mix(in srgb, var(--ok) 16%, transparent);
     color: var(--ok);
   }

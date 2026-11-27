@@ -718,6 +718,7 @@
     width: 340px;
     padding: 26px 26px 22px;
     border-radius: 14px;
+    background: var(--panel);
     background: color-mix(in srgb, var(--panel) 92%, transparent);
     backdrop-filter: blur(8px);
     border: 1px solid var(--border);
@@ -760,6 +761,7 @@
     place-items: center;
     border: 2px dashed var(--accent);
     border-radius: 14px;
+    background: var(--accent-soft);
     background: color-mix(in srgb, var(--accent) 8%, transparent);
     color: var(--accent);
     font-weight: 650;
