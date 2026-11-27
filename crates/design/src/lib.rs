@@ -144,7 +144,12 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 /// raster images are skipped with a warning.
 pub fn import_svg(bytes: &[u8]) -> Result<Design, Error> {
     let mut options = usvg::Options::default();
-    options.fontdb_mut().load_system_fonts();
+    // Loading the system fonts takes a moment; only text needs them (gzip-compressed files are
+    // not searched, so they always get the fonts).
+    let compressed = bytes.starts_with(&[0x1f, 0x8b]);
+    if compressed || bytes.windows(5).any(|w| w == b"<text") {
+        options.fontdb_mut().load_system_fonts();
+    }
     let tree = usvg::Tree::from_data(bytes, &options)?;
     let size = tree.size();
     let mut design = Design {

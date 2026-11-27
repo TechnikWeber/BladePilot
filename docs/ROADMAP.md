@@ -28,7 +28,8 @@ the virtual plotter first, then checked against the real machine on a
 - [x] udev rule for USB access on Linux (`packaging/linux/70-bladepilot.rules`)
 - [ ] Release builds for Linux, Windows and macOS on every tag
 - [ ] Review the USB transport against the protocol notes; time-outs, unplugging, errors
-- [ ] Fuzz the virtual plotter and the importers with malformed input
+- [x] Robustness tests: random and damaged input for the virtual plotter, the capture reader
+      and the importers (fixed seed, runs in CI)
 
 ## Phase 2: Silhouette Studio files beyond outlines
 
