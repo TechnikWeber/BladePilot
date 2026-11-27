@@ -12,6 +12,8 @@ use craft_plotter::gpgl::silhouette::{self, Status, Tool};
 use craft_plotter::{Command, Program};
 
 pub mod usb;
+#[cfg(windows)]
+mod usbprint;
 
 const ETX: u8 = 0x03;
 /// Bytes written to the machine in one go.
@@ -40,6 +42,16 @@ pub trait Transport {
     fn write_all(&mut self, bytes: &[u8]) -> Result<(), Error>;
     /// Returns what the machine has answered, waiting at most `timeout`; empty when nothing came.
     fn read(&mut self, timeout: Duration) -> Result<Vec<u8>, Error>;
+}
+
+impl<T: Transport + ?Sized> Transport for Box<T> {
+    fn write_all(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        (**self).write_all(bytes)
+    }
+
+    fn read(&mut self, timeout: Duration) -> Result<Vec<u8>, Error> {
+        (**self).read(timeout)
+    }
 }
 
 /// The virtual plotter as a transport.

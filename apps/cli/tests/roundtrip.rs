@@ -57,3 +57,49 @@ fn a_label_by_colour_on_the_portrait4_with_an_offset_and_two_passes() {
 fn the_same_design_on_a_two_holder_cameo() {
     roundtrip("cameo4", "nested.svg", |spec| spec.grouping = Grouping::ByColor);
 }
+
+/// A capture as USBPcap would write it on Windows: every write of `chunks` as one bulk-out request.
+fn usbpcap_capture(chunks: &[&[u8]]) -> Vec<u8> {
+    fn block(kind: u32, body: &[u8]) -> Vec<u8> {
+        let mut body = body.to_vec();
+        while !body.len().is_multiple_of(4) {
+            body.push(0);
+        }
+        let len = (body.len() + 12) as u32;
+        [kind.to_le_bytes().as_slice(), &len.to_le_bytes(), &body, &len.to_le_bytes()].concat()
+    }
+    let shb = [0x1a2b_3c4du32.to_le_bytes().as_slice(), &1u16.to_le_bytes(), &0u16.to_le_bytes(), &u64::MAX.to_le_bytes()].concat();
+    let idb = [249u16.to_le_bytes().as_slice(), &0u16.to_le_bytes(), &65535u32.to_le_bytes()].concat();
+    let mut file = [block(0x0a0d_0d0a, &shb), block(1, &idb)].concat();
+    for chunk in chunks {
+        let mut p = 27u16.to_le_bytes().to_vec();
+        p.extend_from_slice(&[0; 12]); // IRP id, status
+        p.extend_from_slice(&9u16.to_le_bytes()); // URB function
+        p.push(0); // request, not completion
+        p.extend_from_slice(&1u16.to_le_bytes()); // bus
+        p.extend_from_slice(&4u16.to_le_bytes()); // device
+        p.push(0x01); // endpoint 1 out
+        p.push(3); // bulk
+        p.extend_from_slice(&(chunk.len() as u32).to_le_bytes());
+        p.extend_from_slice(chunk);
+        let epb = [0u32.to_le_bytes().as_slice(), &[0; 8], &(p.len() as u32).to_le_bytes(), &(p.len() as u32).to_le_bytes(), &p].concat();
+        file.extend(block(6, &epb));
+    }
+    file
+}
+
+#[test]
+fn a_capture_of_a_job_replays_to_the_same_cuts() {
+    let plan = plan(&fixture("nested.svg"), &JobSpec::new(by_id("portrait3").unwrap())).unwrap();
+    let stream = encode(&plan).unwrap().to_stream();
+    // Split the stream at odd places, the way USB packets cut it.
+    let chunks: Vec<&[u8]> = stream.chunks(61).collect();
+    let capture = bladepilot_capture::read(&usbpcap_capture(&chunks)).unwrap();
+    let machine = capture.machine().unwrap();
+    assert_eq!(capture.stream_to(machine), stream);
+    let mut replayed = VirtualPlotter::new(Config::new(plan.machine));
+    replayed.write(b"\x1b\x04");
+    replayed.write(&capture.stream_to(machine));
+    assert_eq!(replayed.cuts().count(), plan.path_count());
+    assert!(replayed.warnings().is_empty(), "{:?}", replayed.warnings());
+}

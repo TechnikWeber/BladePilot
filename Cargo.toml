@@ -27,9 +27,10 @@ bladepilot-design = { path = "crates/design" }
 bladepilot-job = { path = "crates/job" }
 bladepilot-sim = { path = "crates/sim" }
 bladepilot-device = { path = "crates/device" }
+bladepilot-capture = { path = "crates/capture" }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 dbg_macro = "warn"

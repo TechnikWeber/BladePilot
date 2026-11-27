@@ -34,7 +34,8 @@ Read [docs/CLEAN-ROOM.md](docs/CLEAN-ROOM.md) before touching protocol or file-f
 | `crates/design` | SVG and `.studio`/`.studio3` import into one model (mm, y down) |
 | `crates/job` | Flatten, place, group into passes, order, check, encode via craft-plotter |
 | `crates/sim` | Virtual plotter: parses the byte stream, answers queries, draws SVG |
-| `crates/device` | Transports (virtual, USB via nusb) and the job protocol (`Session`) |
+| `crates/device` | Transports (virtual; USB via nusb; Windows printer class driver) and the job protocol (`Session`) |
+| `crates/capture` | Reads USB captures (pcap/pcapng, USBPcap and usbmon) for `bladepilot replay` |
 | `apps/cli` | `bladepilot` command line |
 | `docs/` | Roadmap, architecture, protocol, clean-room rules, hardware test day |
 

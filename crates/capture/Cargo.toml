@@ -1,0 +1,15 @@
+[package]
+name = "bladepilot-capture"
+description = "Reads USB captures (pcap, pcapng) from USBPcap and usbmon and pulls out a machine's traffic."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }

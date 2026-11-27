@@ -49,7 +49,33 @@ pub fn scan() -> Result<Vec<Found>, Error> {
         .collect())
 }
 
-/// An open machine.
+/// Opens a machine found by [`scan`]. On Windows the printer class driver usually holds the
+/// machine, so that route is tried first; everywhere else, and as a fallback, the machine is
+/// claimed directly.
+pub fn open(found: &Found) -> Result<Box<dyn Transport + Send>, Error> {
+    #[cfg(windows)]
+    {
+        let ports = crate::usbprint::ports();
+        if let Some(port) = ports.iter().find(|p| p.vendor_id == found.vendor_id && p.product_id == found.product_id) {
+            return Ok(Box::new(crate::usbprint::UsbPrint::open(&port.path)?));
+        }
+    }
+    Ok(Box::new(UsbTransport::open(found)?))
+}
+
+/// Reads `vid_xxxx` and `pid_xxxx` from a Windows device path such as
+/// `\\?\usb#vid_0b4d&pid_113a#…#{28d78fad-…}`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn parse_printer_path_ids(path: &str) -> Option<(u16, u16)> {
+    let lower = path.to_ascii_lowercase();
+    let hex_after = |tag: &str| {
+        let at = lower.find(tag)? + tag.len();
+        lower.get(at..at + 4).and_then(|h| u16::from_str_radix(h, 16).ok())
+    };
+    Some((hex_after("vid_")?, hex_after("pid_")?))
+}
+
+/// A machine claimed directly over USB.
 pub struct UsbTransport {
     writer: nusb::io::EndpointWrite<Bulk>,
     reader: nusb::io::EndpointRead<Bulk>,
@@ -110,5 +136,18 @@ impl Transport for UsbTransport {
             Err(e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(Vec::new()),
             Err(e) => Err(usb_error(e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn printer_paths_give_their_usb_ids() {
+        let path = r"\\?\usb#vid_0b4d&pid_113a#7&1a2b3c4d&0&2#{28d78fad-5a12-11d1-ae5b-0000f803a8c2}";
+        assert_eq!(parse_printer_path_ids(path), Some((0x0b4d, 0x113a)));
+        assert_eq!(parse_printer_path_ids(&path.to_uppercase()), Some((0x0b4d, 0x113a)));
+        assert_eq!(parse_printer_path_ids(r"\\?\usb#vid_zz#x"), None);
     }
 }

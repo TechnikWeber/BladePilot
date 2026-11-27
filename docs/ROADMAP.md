@@ -15,16 +15,18 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Virtual plotter: status, version and tool replies, cut recording, warnings, SVG drawing
 - [x] Job protocol over any transport, with registration-mark wait
 - [x] Command line: `machines`, `devices`, `inspect`, `cut --dry-run`, `cut --simulate`
-- [x] USB transport (nusb) written, not yet run on hardware
+- [x] USB transport written, not yet run on hardware: nusb on Linux and macOS, the USB printer
+      class driver on Windows (works next to Silhouette Studio without changing drivers)
 
 ## Phase 1: check everything that can be checked without hardware
 
 - [ ] Second opinion: feed the same SVG through inkscape-silhouette's dry run and compare its
       command stream with BladePilot's (a test harness outside the repository's code)
-- [ ] `bladepilot replay CAPTURE.pcapng`: extract the bulk-out stream of a USB capture, run it
-      through the virtual plotter, draw it and list the commands, so captures from Silhouette
-      Studio and from BladePilot can be compared side by side
-- [ ] udev rule and install notes for USB access on Linux
+- [x] `bladepilot replay CAPTURE`: reads pcap/pcapng from USBPcap (Windows) and usbmon (Linux),
+      finds the machine, lists the conversation with repeated status polls folded, runs it
+      through the virtual plotter and draws it; `--commands-only` for comparing two captures
+- [x] udev rule for USB access on Linux (`packaging/linux/70-bladepilot.rules`)
+- [ ] Release builds for Linux, Windows and macOS on every tag
 - [ ] Review the USB transport against the protocol notes; time-outs, unplugging, errors
 - [ ] Fuzz the virtual plotter and the importers with malformed input
 

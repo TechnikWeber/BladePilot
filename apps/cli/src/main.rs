@@ -33,6 +33,29 @@ enum Command {
     },
     /// Plan a design, then cut it, draw it with the virtual plotter or print the program
     Cut(CutArgs),
+    /// Read a USB capture (Wireshark pcap/pcapng with USBPcap or usbmon) and show what the machine got
+    Replay(ReplayArgs),
+}
+
+#[derive(Args)]
+struct ReplayArgs {
+    /// The capture file
+    capture: PathBuf,
+    /// Machine the capture was made with, for drawing and checks
+    #[arg(long, short, default_value = "portrait3")]
+    machine: String,
+    /// The machine as BUS:ADDRESS when the capture holds more than one
+    #[arg(long)]
+    device: Option<bladepilot_capture::Device>,
+    /// Draw what the machine was told to cut into this SVG file
+    #[arg(long, value_name = "SVG")]
+    svg: Option<PathBuf>,
+    /// Show every message, also each repeated status poll
+    #[arg(long)]
+    all: bool,
+    /// Print only the commands, one per line, to compare two captures with diff
+    #[arg(long, conflicts_with = "all")]
+    commands_only: bool,
 }
 
 #[derive(Args)]
@@ -115,6 +138,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Devices => devices(),
         Command::Inspect { file } => inspect(&file),
         Command::Cut(args) => cut(&args),
+        Command::Replay(args) => replay(&args),
     }
 }
 
@@ -288,7 +312,7 @@ fn send_usb(machine: &'static Machine, program: &craft_plotter::Program) -> Resu
     if target.machine.is_none_or(|m| m.id != machine.id) {
         bail!("the connected machine ({:04x}:{:04x}) is not a {}: pass the right --machine", target.vendor_id, target.product_id, machine.name);
     }
-    let transport = usb::UsbTransport::open(target).context("opening the machine")?;
+    let transport = usb::open(target).context("opening the machine")?;
     let mut session = Session::new(transport);
     session.init()?;
     eprintln!("connected {}", session.version().unwrap_or_else(|_| "(no version reply)".to_string()));
@@ -301,5 +325,58 @@ fn send_usb(machine: &'static Machine, program: &craft_plotter::Program) -> Resu
         Progress::Finishing => eprintln!("\nfinishing"),
         Progress::Done => eprintln!("done"),
     })?;
+    Ok(())
+}
+
+fn replay(args: &ReplayArgs) -> Result<()> {
+    use bladepilot_capture::{Message, fold_polls, printable};
+    let machine: &'static Machine =
+        bladepilot_machines::by_id(&args.machine).with_context(|| format!("unknown machine `{}`; `bladepilot machines` lists them", args.machine))?;
+    let bytes = std::fs::read(&args.capture).with_context(|| format!("reading {}", args.capture.display()))?;
+    let capture = bladepilot_capture::read(&bytes).with_context(|| format!("reading {}", args.capture.display()))?;
+    eprintln!("capture   {}: {} packets, {} bulk transfers with data", args.capture.display(), capture.packets, capture.transfers.len());
+    let device = match args.device {
+        Some(device) => device,
+        None => capture.machine().context("no device in the capture talks like a cutting machine; pick one with --device BUS:ADDRESS")?,
+    };
+    for t in capture.devices() {
+        let mark = if t.device == device { "  <- machine" } else { "" };
+        eprintln!("device    {:<7} {:>9} bytes to it, {:>7} bytes from it{mark}", t.device.to_string(), t.to_device, t.from_device);
+    }
+    let messages = capture.messages(device);
+    let mut out = std::io::stdout().lock();
+    if args.commands_only {
+        for m in &messages {
+            if let Message::Command(c) = m {
+                writeln!(out, "{}", printable(c.as_bytes()))?;
+            }
+        }
+    } else if args.all {
+        for m in &messages {
+            writeln!(out, "{}", m.describe())?;
+        }
+    } else {
+        for (line, count) in fold_polls(&messages) {
+            if count > 1 {
+                writeln!(out, "{line}  (x{count})")?;
+            } else {
+                writeln!(out, "{line}")?;
+            }
+        }
+    }
+    let mut plotter = VirtualPlotter::new(Config::new(machine));
+    plotter.write(&capture.stream_to(device));
+    let stats = plotter.stats();
+    eprintln!(
+        "simulated {} commands, {} cut(s), {:.0} mm cut, {:.0} mm travel, {} warning(s)",
+        stats.commands, stats.cuts, stats.cut_length_mm, stats.travel_length_mm, stats.warnings
+    );
+    for w in plotter.warnings() {
+        eprintln!("warning   {}", w.message);
+    }
+    if let Some(svg) = &args.svg {
+        std::fs::write(svg, plotter.to_svg()).with_context(|| format!("writing {}", svg.display()))?;
+        eprintln!("drawn     {}", svg.display());
+    }
     Ok(())
 }

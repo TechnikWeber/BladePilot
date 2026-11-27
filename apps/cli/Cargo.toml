@@ -17,6 +17,7 @@ bladepilot-design = { workspace = true }
 bladepilot-job = { workspace = true }
 bladepilot-sim = { workspace = true }
 bladepilot-device = { workspace = true }
+bladepilot-capture = { workspace = true }
 craft-plotter = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
