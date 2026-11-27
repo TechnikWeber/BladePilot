@@ -48,9 +48,10 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Send dialog with machine status, progress, pause, stop and tool changes
 - [x] English and German, light and dark, following the system
 - [x] Mock backend: the front end runs in a browser, for screenshots and a later web demo
-- [ ] Bundles on GitHub Actions for tagged releases: AppImage, deb, rpm, Windows installer, dmg
-      (written, waits for the first desktop release)
-- [ ] Open files from the file manager (file associations) and remember the last session
+- [x] Bundles on GitHub Actions for every tag: AppImage, deb and rpm (x86_64, aarch64), Windows
+      installer and msi, universal dmg
+- [x] Open design files named on the command line; "Open with" for SVG on Linux
+- [ ] File associations on Windows and macOS; remember the last session
 - [ ] Web demo on GitHub Pages: the front end with the planner compiled to WebAssembly
 
 ## Phase 4: print and cut

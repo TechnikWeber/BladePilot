@@ -56,32 +56,38 @@ The hardware test day happens on the maintainer's Windows PC, in a clone of this
 with Claude Code running the captures: follow [docs/HARDWARE-DAY.md](docs/HARDWARE-DAY.md)
 step by step there. Private material on that PC goes into `re\` as well.
 
-## Next: the desktop app (phase 3)
+## The desktop app (phase 3, built)
 
-The plan, decided with the maintainer; adjust details, not the direction:
+Decided with the maintainer; adjust details, not the direction:
 
 - Tauri 2 in `apps/desktop`: `src-tauri/` is the Rust crate `bladepilot-desktop`, a thin layer
-  of commands over the workspace crates; `ui/` is the web front end (Vite, TypeScript,
-  Svelte 5, own CSS, no UI kit). Plain `cargo build` must keep working for the rest of the
-  workspace.
-- It has to look good: a mat that looks like a real cutting mat (grid, rulers, cutting area),
-  the design drawn in its colours, drag to place, rotate and scale; a colour list with tool,
-  force, speed, depth and repeats per colour; a machine panel with status; a send dialog with
-  progress; an animated preview of the cutting order from the virtual plotter. Light and dark
-  theme from the system, English and German from the system language.
+  of commands over the workspace crates (`service.rs` does the work and is tested without a
+  window); `ui/` is the web front end (Vite, TypeScript, Svelte 5, own CSS, no UI kit). A plain
+  `cargo build` leaves the desktop crate out (`default-members`).
+- It has to look good: the mat looks like a real cutting mat, designs in their colours, light
+  and dark from the system, English and German from the system language. Check visual changes
+  with `npm run screenshots` and look at the images before committing.
 - Long jobs run off the UI thread; the UI never freezes while cutting.
-- The front end has a mock backend so it runs in a plain browser: that is how screenshots for
-  the README are made (headless Chrome), and maybe later a web demo.
-- Releases: extend `release.yml` with the Tauri bundles (AppImage, deb, rpm, msi/exe, dmg).
-- Then phase 2 (`.studio3` beyond outlines, test documents from Silhouette Studio under Wine)
-  and phase 4 (print and cut).
+- The mock backend (`ui/src/lib/api/mock`) keeps the front end running in a plain browser.
+- Testing the real window without the maintainer's desktop: run it in a virtual KWin session
+  (`dbus-run-session`, `kwin_wayland --virtual --socket NAME`, `spectacle -b -n -f -o FILE`), see
+  the private notes.
+
+## Next
+
+- Phase 2: `.studio3` beyond outlines, test documents from Silhouette Studio under Wine.
+- Phase 4: print and cut.
+- Desktop: file associations on Windows and macOS, remember the last session, material
+  profiles per colour, a web demo with the planner in WebAssembly.
 
 ## Releases
 
 Tag `vX.Y.Z` (matching `version` in `Cargo.toml`, with a `CHANGELOG.md` section) and push the
-tag: `.github/workflows/release.yml` builds Linux (AppImage, deb, rpm, tar.gz for x86_64 and
-aarch64), Windows (exe, zip for x86_64 and arm64) and macOS (universal tar.gz) and publishes
-the release; 0.x versions are marked as pre-releases. Started by hand, the workflow only builds.
+tag: `.github/workflows/release.yml` builds the command line for Linux (AppImage, deb, rpm,
+tar.gz for x86_64 and aarch64), Windows (exe, zip for x86_64 and arm64) and macOS (universal
+tar.gz), and the desktop app (`BladePilot-Desktop-…` AppImage, `bladepilot-desktop` deb and rpm
+for x86_64 and aarch64, Windows setup exe and msi, universal dmg), then publishes the release;
+0.x versions are marked as pre-releases. Started by hand, the workflow only builds.
 
 ## Commands
 
