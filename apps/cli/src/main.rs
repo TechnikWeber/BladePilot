@@ -386,7 +386,9 @@ fn execute(plan: &Plan, output: &OutputArgs) -> Result<()> {
         return send_bluetooth(plan, &program, address.as_deref());
     }
     if !output.experimental_usb {
-        bail!("cutting on a real machine is still experimental: add --experimental-usb or --experimental-bluetooth (or use --dry-run or --simulate FILE.svg)");
+        bail!(
+            "cutting on a real machine is still experimental: add --experimental-usb or --experimental-bluetooth (or use --dry-run or --simulate FILE.svg)"
+        );
     }
     send_usb(plan, &program)
 }
