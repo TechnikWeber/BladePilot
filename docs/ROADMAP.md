@@ -53,13 +53,20 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Bundles on GitHub Actions for every tag: AppImage, deb and rpm (x86_64, aarch64), Windows
       installer and msi, universal dmg
 - [x] Open design files named on the command line; "Open with" for SVG on Linux
+- [x] Pictures (PNG, JPEG, WebP, BMP, GIF): traced from transparency or darkness, with a
+      threshold and specks ignored
+- [x] Per design: its own lines, only the outermost lines, a contour at a distance, or nothing;
+      single lines clicked away on the mat
 - [ ] File associations on Windows and macOS; remember the last session
 - [ ] Web demo on GitHub Pages: the front end with the planner compiled to WebAssembly
 
 ## Phase 4: print and cut
 
-- [ ] Registration-mark layout and a printable PDF with the design and the marks
-- [ ] Mark search with three or four marks, manual positioning as fallback
+- [x] Registration-mark layout and a printable PDF with the design and the marks (desktop app)
+- [x] Contour at a chosen distance around printed stickers, holes filled
+- [ ] Mark search with three marks: written, waits for the hardware test (T5); four marks and
+      manual positioning later
+- [ ] Print and cut on the command line
 - [ ] Calibration sheet and stored offsets per machine
 
 ## Phase 5: hardware test days
@@ -118,7 +125,8 @@ from Inkscape or any other editor, or from Silhouette Studio files.
 | Test cut | done |
 | Cut by line colour; by fill colour; by layer | line colour, else fill colour: done; layers: phase 2 |
 | Material list with blade depth, force, speed and passes per material | later: own material profiles with a test cut (no vendor tables) |
-| Print and cut with registration marks, PixScan | registration marks: phase 4; PixScan: not planned |
+| Print and cut with registration marks, PixScan | registration marks: written, to be tried on a machine; PixScan: not planned |
+| Trace pictures, offset (contour) | trace from transparency or darkness, contour at a distance: done |
 | Move the blade to a start point, feed and unload from the software | later; load and unload stay on the machine's buttons |
 | Roller track enhancing, double cut, overcut | repeats and overcut: done; track enhancing: later |
 | Tools: ratchet, kraft, rotary, deep-cut and punch blades, sketch pens, embossing (Curio), heat pen | blade and pen; tool-specific settings later |
@@ -126,7 +134,7 @@ from Inkscape or any other editor, or from Silhouette Studio files.
 | Long cuts from the roll, tiling | later |
 | Weeding lines and boxes, replicate and nesting to save material | later |
 | Bluetooth | Windows and Linux: done, experimental; macOS later |
-| Design tools: shapes, text, trace, offset, weld, knife, sketch fills | not planned beyond offset and trace for print and cut; use Inkscape |
+| Design tools: shapes, text, weld, knife, sketch fills | not planned; use Inkscape |
 | Design store, library, cloud | out of scope |
 | Firmware updates | out of scope |
 

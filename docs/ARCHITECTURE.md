@@ -12,10 +12,12 @@
 | Crate | Job |
 |---|---|
 | `bladepilot-machines` | What each machine is: USB ids, protocol generation, holders, cutting width, longest feed, mats. |
-| `bladepilot-design` | Reads SVG with `usvg` and Silhouette Studio documents with `craft-silhouette-studio` into one model: Bézier paths in mm, `(x right, y down)` from the page's top-left corner, with outline and fill colours. Flattens curves into polylines. |
+| `bladepilot-design` | Reads SVG with `usvg` and Silhouette Studio documents with `craft-silhouette-studio` into one model: Bézier paths in mm, `(x right, y down)` from the page's top-left corner, with outline and fill colours, and pictures with their traced edges. Flattens curves into polylines; works out contours at a distance and the outermost lines. |
 | `bladepilot-job` | Turns a design into a plan: flatten within a tolerance (0.02 mm by default), move onto the mat, group into passes, order, check against the cutting area. Encodes a plan with `craft-plotter`. |
 | `bladepilot-sim` | The virtual plotter. Parses the byte stream like a machine, keeps the head position, answers queries, records cuts and lifted moves, warns, draws SVG. |
 | `bladepilot-device` | The `Transport` trait and the `Session` that runs a job: initialise, wait until ready, stream, wait for marks, wait until done. A `JobControl` pauses (at the next lifted move), resumes and stops (lift, park) a job from another thread, and the session pauses by itself before a pass that needs another tool. Transports: the virtual plotter; USB through nusb on Linux and macOS; on Windows the USB printer class driver (`usbprint.sys`), which Silhouette Studio uses too, so no driver has to be replaced. |
+| `bladepilot-trace` | Outlines from pixels: a picture's transparency or darkness cut at a threshold, specks and pinholes removed, holes filled; marching squares with sub-pixel precision for the edges, a Euclidean distance field for contours at a distance. |
+| `bladepilot-print` | Print and cut: the registration-mark layout (a square at the top left, brackets at the top right and bottom left), the keep-out areas around the marks, and the sheet as a PDF with the pictures and the marks. |
 | `bladepilot-capture` | Reads USB captures (pcap, pcapng) from USBPcap and usbmon, finds the machine and splits its traffic into commands and replies, for `bladepilot replay`. |
 | `bladepilot-cli` | The `bladepilot` command line. |
 | `bladepilot-desktop` | The desktop app (`apps/desktop/src-tauri`): Tauri commands over the crates above. `service.rs` does the work without Tauri (imports, plans, the virtual plotter run behind the preview, jobs on their own thread), `model.rs` holds the JSON types the front end mirrors. |
@@ -77,3 +79,7 @@
 | tauri, tauri-plugin-dialog | Apache-2.0 OR MIT | Desktop window, file dialogs |
 | serde, serde_json, sys-locale | Apache-2.0 OR MIT | JSON for the front end, system language |
 | Svelte (built with Vite and TypeScript) | MIT | Desktop front end |
+| image | MIT OR Apache-2.0 | Reading pictures |
+| tiny-skia | BSD-3-Clause | Drawing designs for contours |
+| resvg | Apache-2.0 OR MIT | Drawing SVG artwork for the print sheet |
+| pdf-writer, miniz_oxide | MIT OR Apache-2.0 (miniz_oxide also Zlib) | The print sheet |

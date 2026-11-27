@@ -5,6 +5,41 @@ import type { ApiError, DesignInfo, JobRequest, MachineInfo, PassInfo, PlanInfo,
 
 type Line = number[];
 
+/** The colour of contour cuts (as on the Rust side). */
+const CONTOUR = '#ff00ff';
+
+/**
+ * A convex hull grown by `r` with round corners, closed: the browser demo's stand-in for the
+ * contour the Rust side traces.
+ */
+export function offsetHull(hull: [number, number][], r: number): Line {
+  const n = hull.length;
+  if (n < 3) return [];
+  let area = 0;
+  for (let i = 0; i < n; i++) area += hull[i][0] * hull[(i + 1) % n][1] - hull[(i + 1) % n][0] * hull[i][1];
+  const sign = area > 0 ? 1 : -1;
+  const normal = (i: number) => {
+    const [x1, y1] = hull[i];
+    const [x2, y2] = hull[(i + 1) % n];
+    const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+    return Math.atan2(-sign * (x2 - x1) / len, sign * (y2 - y1) / len);
+  };
+  const out: Line = [];
+  for (let i = 0; i < n; i++) {
+    let from = normal((i + n - 1) % n);
+    let to = normal(i);
+    while (to < from) to += 2 * Math.PI;
+    if (to - from > Math.PI * 1.5) [from, to] = [to, from + 2 * Math.PI];
+    const steps = Math.max(1, Math.ceil((to - from) / (Math.PI / 12)));
+    for (let k = 0; k <= steps; k++) {
+      const t = from + ((to - from) * k) / steps;
+      out.push(hull[i][0] + r * Math.cos(t), hull[i][1] + r * Math.sin(t));
+    }
+  }
+  out.push(out[0], out[1]);
+  return out;
+}
+
 interface Pass {
   color: string | null;
   settings: Settings;
@@ -93,25 +128,38 @@ export function planMock(job: JobRequest, designs: Map<number, DesignInfo>, mach
   const skip = new Set(job.colors.filter((c) => c.skip).map((c) => c.color));
   const rows = new Map(job.colors.map((c) => [c.color, c]));
   const groups: Pass[] = [];
+  const addLines = (key: string | null, lines: Line[]) => {
+    let group = groups.find((g) => g.color === key);
+    if (!group) {
+      const settings = job.byColor ? (rows.get(key)?.settings ?? job.settings) : job.settings;
+      group = { color: key, settings, paths: [], depth: 0 };
+      groups.push(group);
+    }
+    group.paths.push(...lines);
+  };
   for (const item of job.items) {
     const design = designs.get(item.design) ?? fail('unknownDesign', `no design ${item.design}`);
     const [a, b, c, d, e, f] = item.matrix;
-    for (const shape of design.shapes) {
-      if (skip.has(shape.color)) continue;
-      const key = job.byColor ? shape.color : null;
-      const lines = flattenPathData(shape.d).map((l) => {
-        const out: Line = [];
-        for (let k = 0; k < l.length; k += 2) out.push(a * l[k] + c * l[k + 1] + e, b * l[k] + d * l[k + 1] + f);
-        return out;
-      });
-      let group = groups.find((g) => g.color === key);
-      if (!group) {
-        const settings = job.byColor ? (rows.get(key)?.settings ?? job.settings) : job.settings;
-        group = { color: key, settings, paths: [], depth: 0 };
-        groups.push(group);
-      }
-      group.paths.push(...lines);
+    const place = (l: number[]): Line => {
+      const out: Line = [];
+      for (let k = 0; k < l.length; k += 2) out.push(a * l[k] + c * l[k + 1] + e, b * l[k] + d * l[k + 1] + f);
+      return out;
+    };
+    const cut = item.cut ?? { kind: 'lines', outerOnly: false, hidden: [] };
+    if (cut.kind === 'none') continue;
+    if (cut.kind === 'contour') {
+      if (skip.has(CONTOUR)) continue;
+      const scale = Math.sqrt(Math.abs(a * d - b * c)) || 1;
+      addLines(job.byColor ? CONTOUR : null, [place(offsetHull(design.hull, cut.offsetMm / scale))]);
+      continue;
     }
+    const lines: { key: string | null; line: Line }[] = [];
+    design.shapes.forEach((shape, index) => {
+      if (skip.has(shape.color) || cut.hidden.includes(index)) return;
+      for (const l of flattenPathData(shape.d)) lines.push({ key: job.byColor ? shape.color : null, line: place(l) });
+    });
+    const kept = cut.outerOnly ? lines.filter((x) => !lines.some((y) => y !== x && around(y.line, x.line))) : lines;
+    for (const { key, line } of kept) addLines(key, [line]);
   }
   const all = groups.flatMap((g) => g.paths);
   const allDepths = depths(all);
@@ -138,6 +186,21 @@ export function planMock(job: JobRequest, designs: Map<number, DesignInfo>, mach
   }
   if (box[0] < -1e-6 || box[1] < -1e-6) fail('beforeOrigin', 'the design starts outside the cutting area');
   if (box[2] > mat.areaWidthMm + 1e-6 || box[3] > mat.areaHeightMm + 1e-6) fail('outOfBounds', 'the design does not fit');
+  if (job.print) {
+    const paper = job.print.paper === 'letter' ? { w: 215.9, h: 279.4 } : { w: 210, h: 297 };
+    const inset = job.print.insetMm;
+    const right = Math.min(paper.w, mat.areaWidthMm) - inset;
+    const bottom = Math.min(paper.h, mat.areaHeightMm) - inset;
+    if (box[0] < inset || box[1] < inset || box[2] > right || box[3] > bottom) fail('outsideMarks', 'the design reaches beyond the registration marks');
+    const keepOut = [
+      [inset - 3, inset - 3, inset + 8, inset + 8],
+      [right - 23, inset - 3, right + 3, inset + 23],
+      [inset - 3, bottom - 23, inset + 23, bottom + 3],
+    ];
+    for (const p of passes) for (const l of p.paths) for (let k = 0; k < l.length; k += 2) {
+      if (keepOut.some(([x0, y0, x1, y1]) => l[k] >= x0 && l[k] <= x1 && l[k + 1] >= y0 && l[k + 1] <= y1)) fail('onMarks', 'the design touches a registration mark');
+    }
+  }
   const pauseColors = new Set(job.colors.filter((c) => c.pauseBefore).map((c) => c.color));
   const infos: PassInfo[] = passes.map((p, i) => {
     const toolChange = i > 0 && p.settings.tool !== passes[i - 1].settings.tool;

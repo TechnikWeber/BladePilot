@@ -5,6 +5,9 @@ import { backend } from './api';
 import type {
   ApiError,
   AppInfo,
+  ItemCut,
+  PrintSetup,
+  TraceRequest,
   UsbAccess,
   ColorInfo,
   DesignInfo,
@@ -27,6 +30,33 @@ import { errorText, t } from './i18n/index.svelte';
 export interface Item extends Placement {
   id: number;
   design: number;
+  /** What of the design is cut. */
+  cut: ItemCut;
+  /** Print and cut: printed on the sheet. */
+  print: boolean;
+}
+
+/** The colour contour cuts get, a pass of their own (as `CONTOUR_COLOR` on the Rust side). */
+export const CONTOUR_COLOR = '#ff00ff';
+
+export const PAPERS = { a4: { w: 210, h: 297 }, letter: { w: 215.9, h: 279.4 } } as const;
+/** Marks: a square at the top left, brackets at the top right and bottom left (as bladepilot-print). */
+export const MARK = { square: 5, bracket: 20, line: 0.5, clearance: 3 } as const;
+
+/** Where the marks sit: their outer extent, mm (as `Marks::layout`). */
+export interface MarkLayout {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export function markLayout(paper: { w: number; h: number }, area: { w: number; h: number }, inset: number): MarkLayout | null {
+  const right = Math.min(paper.w, area.w) - inset;
+  const bottom = Math.min(paper.h, area.h) - inset;
+  const least = 2 * (MARK.bracket + MARK.clearance) + 10;
+  if (inset < 0 || right - inset < least || bottom - inset < least) return null;
+  return { left: inset, top: inset, right, bottom };
 }
 
 export interface ColorPrefs {
@@ -142,6 +172,7 @@ export function colorKey(color: string | null): string {
 }
 
 interface StoredPrefs {
+  print?: PrintSetup;
   machineId?: string;
   matId?: string;
   unit?: 'mm' | 'in';
@@ -179,6 +210,13 @@ class AppState {
   dragging = $state(false);
 
   byColor = $state(true);
+  /** Print and cut is on: designs are printed with registration marks, then cut. */
+  printMode = $state(false);
+  printSetup = $state<PrintSetup>({ paper: 'a4', insetMm: 10 });
+  /** Click single lines of the selected design to leave them out. */
+  lineSelect = $state(false);
+  /** Contour path data by design and offset (in the design's own mm). */
+  contours = $state<Record<string, string>>({});
   manualOrder = $state(false);
   order = $state<(string | null)[]>([]);
   prefs = $state<Record<string, ColorPrefs>>({});
@@ -230,6 +268,14 @@ class AppState {
     if (!mat) return { w: 203, h: 304.8 };
     return { w: mat.areaWidthMm, h: mat.id === 'none' ? this.rollLength : mat.areaHeightMm };
   });
+  /** Print and cut: where the marks go, `null` when they do not fit. */
+  marks = $derived.by(() => {
+    if (!this.printMode || !this.mat) return null;
+    const paper = PAPERS[this.printSetup.paper];
+    const area = { w: this.mat.areaWidthMm, h: this.mat.id === 'none' ? 18000 : this.mat.areaHeightMm };
+    return markLayout(paper, area, this.printSetup.insetMm);
+  });
+
   /** The sheet drawn under the cutting area. */
   sheet = $derived.by(() => {
     const mat = this.mat;
@@ -265,17 +311,24 @@ class AppState {
   /** The cut colours on the mat, in first-seen order, with shape counts and lengths summed. */
   colorInfos = $derived.by(() => {
     const out: ColorInfo[] = [];
+    const add = (color: string | null, shapes: number, lengthMm: number) => {
+      const entry = out.find((e) => e.color === color);
+      if (entry) {
+        entry.shapes += shapes;
+        entry.lengthMm += lengthMm;
+      } else out.push({ color, shapes, lengthMm });
+    };
     for (const item of this.items) {
       const design = this.designs[item.design];
       if (!design) continue;
       const k = Math.sqrt(Math.abs(item.sx * item.sy));
-      for (const c of design.colors) {
-        const entry = out.find((e) => e.color === c.color);
-        if (entry) {
-          entry.shapes += c.shapes;
-          entry.lengthMm += c.lengthMm * k;
-        } else out.push({ color: c.color, shapes: c.shapes, lengthMm: c.lengthMm * k });
+      if (item.cut.kind === 'none') continue;
+      if (item.cut.kind === 'contour') {
+        const [x0, y0, x1, y1] = design.bbox;
+        add(CONTOUR_COLOR, 1, 2 * (x1 - x0 + y1 - y0) * k);
+        continue;
       }
+      for (const c of design.colors) add(c.color, c.shapes, c.lengthMm * k);
     }
     return out;
   });
@@ -311,11 +364,12 @@ class AppState {
     const items = [];
     for (const item of this.items) {
       const design = this.designs[item.design];
-      if (design) items.push({ design: item.design, matrix: placementMatrix(item, design) });
+      if (design) items.push({ design: item.design, matrix: placementMatrix(item, design), cut: $state.snapshot(item.cut), print: this.printMode && item.print });
     }
     return {
       machine: machine.id,
       mat: mat.id,
+      print: this.printMode ? $state.snapshot(this.printSetup) : null,
       items,
       byColor: this.byColor,
       manualOrder: this.byColor && this.manualOrder,
@@ -335,7 +389,8 @@ class AppState {
     return {
       machine: this.machine.id,
       mat: this.mat.id,
-      items: [{ design: design.id, matrix: [1, 0, 0, 1, test.x, test.y] }],
+      items: [{ design: design.id, matrix: [1, 0, 0, 1, test.x, test.y], cut: { kind: 'lines', outerOnly: false, hidden: [] }, print: false }],
+      print: null,
       byColor: false,
       manualOrder: false,
       settings: $state.snapshot(test.settings),
@@ -364,6 +419,7 @@ class AppState {
     if (stored.byColor !== undefined) this.byColor = stored.byColor;
     if (stored.single) this.single = { ...defaultSettings(), ...stored.single };
     if (stored.colors) this.prefs = stored.colors;
+    if (stored.print) this.printSetup = { ...this.printSetup, ...stored.print };
     const [info, machines] = await Promise.all([backend.appInfo(), backend.machines()]);
     this.info = info;
     this.machines = machines;
@@ -409,6 +465,7 @@ class AppState {
       byColor: this.byColor,
       single: $state.snapshot(this.single),
       colors: $state.snapshot(this.prefs),
+      print: $state.snapshot(this.printSetup),
     };
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify(data));
@@ -482,7 +539,7 @@ class AppState {
 
   /** Puts a freshly opened design on the mat: where its page says when that fits, else top left. */
   place(design: DesignInfo): void {
-    if (!design.shapes.length) {
+    if (!design.shapes.length && !design.image) {
       this.toast(`${t('error.open', { name: design.name })}: ${t('error.nothingInFile')}`);
       return;
     }
@@ -493,16 +550,28 @@ class AppState {
     let cx = x0 + w / 2;
     let cy = y0 + h / 2;
     const fits = x0 >= 0 && y0 >= 0 && x0 + w <= area.w && y0 + h <= area.h;
-    if (!fits) {
-      cx = Math.min(10, Math.max(0, (area.w - w) / 2)) + w / 2;
-      cy = 10 + h / 2;
+    // Print and cut: inside the marks, clear of the square at the top left.
+    const start = this.marks ? { x: this.marks.left + MARK.square + MARK.clearance + 4, y: this.marks.top + MARK.square + MARK.clearance + 4 } : { x: 10, y: 10 };
+    if (!fits || this.marks) {
+      cx = Math.min(start.x, Math.max(0, (area.w - w) / 2)) + w / 2;
+      cy = start.y + h / 2;
     }
     // Not exactly on top of another item.
     while (this.items.some((i) => Math.abs(i.cx - cx) < 0.5 && Math.abs(i.cy - cy) < 0.5)) {
       cx += 10;
       cy += 10;
     }
-    const item: Item = { id: nextItemId++, design: design.id, cx, cy, angle: 0, sx: 1, sy: 1 };
+    // Pictures larger than most of the cutting area start smaller.
+    let k = 1;
+    if (design.image) {
+      k = Math.min(1, (area.w * 0.8) / w, (area.h * 0.8) / h);
+      if (!fits || k < 1 || this.marks) {
+        cx = start.x + (w * k) / 2;
+        cy = start.y + (h * k) / 2;
+      }
+    }
+    const cut: ItemCut = design.image && this.printMode ? { kind: 'contour', offsetMm: 2 } : { kind: 'lines', outerOnly: false, hidden: [] };
+    const item: Item = { id: nextItemId++, design: design.id, cx, cy, angle: 0, sx: k, sy: k, cut, print: !!design.printable };
     this.items.push(item);
     this.selected = item.id;
     for (const w of design.warnings) this.toast(`${design.name}: ${w}`, 'info');
@@ -529,6 +598,65 @@ class AppState {
     if (!this.prefs[black]) this.prefs[black] = { settings: { ...defaultSettings(), force: 20, speed: 5, depth: 4, repeats: 2 }, skip: false, pauseBefore: false };
     this.byColor = true;
     await this.open(async () => [await backend.openDemo()]);
+  }
+
+  /** Changes how the selected item is cut. */
+  setCut(cut: ItemCut): void {
+    const item = this.selectedItem;
+    if (!item) return;
+    this.checkpoint();
+    item.cut = cut;
+    if (cut.kind !== 'lines') this.lineSelect = false;
+  }
+
+  /** Leaves a line of the selected item out, or puts it back. */
+  toggleLine(index: number): void {
+    const item = this.selectedItem;
+    if (!item || item.cut.kind !== 'lines') return;
+    this.checkpoint();
+    const hidden = item.cut.hidden;
+    item.cut = { ...item.cut, hidden: hidden.includes(index) ? hidden.filter((i) => i !== index) : [...hidden, index] };
+  }
+
+  /** Traces a picture again; every item showing it follows. */
+  async retrace(designId: number, trace: TraceRequest): Promise<void> {
+    try {
+      const info = await backend.traceDesign(designId, trace);
+      this.designs[designId] = info;
+      for (const key of Object.keys(this.contours)) if (key.startsWith(`${designId}|`)) delete this.contours[key];
+    } catch (e) {
+      this.toast(errorText(e));
+    }
+  }
+
+  /** The contour path of an item's design at its offset, in the design's mm; fetched once. */
+  contourKey(item: Item): string | null {
+    if (item.cut.kind !== 'contour') return null;
+    const scale = Math.sqrt(Math.abs(item.sx * item.sy)) || 1;
+    return `${item.design}|${(item.cut.offsetMm / scale).toFixed(2)}`;
+  }
+
+  async loadContour(key: string): Promise<void> {
+    if (key in this.contours) return;
+    this.contours[key] = '';
+    const [design, offset] = key.split('|');
+    try {
+      this.contours[key] = await backend.contourPath(Number(design), Number(offset));
+    } catch {
+      delete this.contours[key];
+    }
+  }
+
+  /** Saves the print sheet as PDF. */
+  async savePrintSheet(): Promise<void> {
+    const job = this.job;
+    if (!job || !job.print) return;
+    try {
+      const path = await backend.printSheet(job);
+      if (path) this.toast(t('print.saved', { path }), 'info');
+    } catch (e) {
+      this.toast(errorText(e));
+    }
   }
 
   removeSelected(): void {

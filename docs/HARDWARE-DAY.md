@@ -91,7 +91,7 @@ importer.
 | T2 | as T1 | AutoBlade on paper: note depth, force, speed | `cut hardware-tests\T1-square.svg --depth D --force F --speed S`; to try settings first: `test-cut --at 150,10 --depth D --force F --speed S` |
 | T3 | 40 × 40 mm square at X 5, Y 5, 20 mm circle in its centre | AutoBlade on paper | `cut hardware-tests\T3-label.svg` with T2's settings |
 | T4 | as T3, circle red, square black | Cut by line colour: red sketch pen, black AutoBlade | `cut hardware-tests\T4-two-colours.svg --by-color --pen-color "#ff0000"`; it draws the circle, lifts the pen and waits: put the AutoBlade in, press Enter |
-| T5 | 30 mm circle with registration marks | Print and cut: print the sheet, load it, cut | not yet: Studio only |
+| T5 | a sticker with registration marks | Print and cut: print the sheet, load it, cut | Desktop app: switch on **Print and cut**, open a PNG with a transparent background, Contour 3 mm, **Save the print sheet**, print it at 100 %, put it at the top left of the mat, Send with a pen first. Check that the line lands 3 mm around the print; note how far it is off |
 | T6 | as T2 | Start, cancel after about a second | Ctrl+C after about a second |
 | T7 | as T4 | not needed | Optional, with the desktop app (`BladePilot-Desktop-…-windows-x64-setup.exe` from the releases): open `T4-two-colours.svg`, set red to Pen, choose the machine under Connection, Send; pause once, then Stop in a second run |
 | T8 | a test cut | Send panel, **Test Cut** with T2's settings | `test-cut --depth D --force F --speed S` |

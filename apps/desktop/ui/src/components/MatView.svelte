@@ -1,7 +1,7 @@
 <script lang="ts">
   // The workbench: the cutting mat with its grid, rulers and cutting area, the designs on it, and
   // the handles to move, turn and resize them. Everything inside the SVG is in millimetres.
-  import { app, type Item } from '../lib/state.svelte';
+  import { app, type Item, CONTOUR_COLOR, MARK, PAPERS } from '../lib/state.svelte';
   import { type Point, type Placement, MM_PER_INCH, gridLines, normalizeAngle, placementMatrix, placedHull, snap1d } from '../lib/geometry';
   import { displayColor, isDark } from '../lib/theme.svelte';
   import { t, num } from '../lib/i18n/index.svelte';
@@ -122,6 +122,14 @@
   }
 
   const skipped = $derived(new Set(app.rows.filter((r) => r.prefs.skip).map((r) => r.color)));
+
+  // Contours come from the Rust side once per design and offset.
+  $effect(() => {
+    for (const item of app.items) {
+      const key = app.contourKey(item);
+      if (key && !(key in app.contours)) void app.loadContour(key);
+    }
+  });
 
   // Selection frame: the item's own box, turned with it.
   const frame = $derived.by(() => {
@@ -419,6 +427,19 @@
       </g>
     {/if}
 
+    <!-- Print and cut: the sheet at the top left of the mat, and the marks printed on it -->
+    {#if app.printMode}
+      {@const paper = PAPERS[app.printSetup.paper]}
+      <g class="paper" pointer-events="none">
+        <rect x="0" y="0" width={paper.w} height={paper.h} class="sheet-paper" />
+        {#if app.marks}
+          {@const m = app.marks}
+          <rect x={m.left} y={m.top} width={m.right - m.left} height={m.bottom - m.top} class="mark-area" vector-effect="non-scaling-stroke" />
+        {/if}
+        <text x={paper.w - 2} y={paper.h - 2.5} font-size="3.2" text-anchor="end" class="paper-label">{app.printSetup.paper === 'a4' ? 'A4' : 'Letter'}</text>
+      </g>
+    {/if}
+
     <!-- Cutting area -->
     <rect x="0" y="0" width={area.w} height={area.h} class="area" pointer-events="none" />
     {#if !roll}
@@ -435,8 +456,21 @@
       {#each app.items as item (item.id)}
         {@const design = designOf(item)}
         {#if design}
+          {@const cut = item.cut}
+          {@const picking = app.lineSelect && app.selected === item.id && cut.kind === 'lines'}
           <g class="item" class:outside={app.outside.has(item.id)}>
             <g transform="matrix({matrixOf(item)})">
+              {#if design.image}
+                <image
+                  href={design.image.href}
+                  x="0"
+                  y="0"
+                  width={design.image.widthMm}
+                  height={design.image.heightMm}
+                  preserveAspectRatio="none"
+                  class:dim={!app.printMode && cut.kind !== 'none'}
+                />
+              {/if}
               {#each design.shapes as shape, i (i)}
                 <path
                   d={shape.d}
@@ -444,15 +478,50 @@
                   fill-opacity="0.13"
                   stroke={displayColor(shape.color)}
                   class:skip={skipped.has(shape.color)}
+                  class:off={cut.kind === 'lines' ? cut.hidden.includes(i) : !(app.printMode && item.print)}
                   vector-effect="non-scaling-stroke"
                 />
               {/each}
+              {#if cut.kind === 'contour'}
+                {@const key = app.contourKey(item)}
+                {#if key && app.contours[key]}
+                  <path d={app.contours[key]} class="contour" class:skip={skipped.has(CONTOUR_COLOR)} vector-effect="non-scaling-stroke" />
+                {/if}
+              {/if}
+              {#if picking}
+                {#each design.shapes as shape, i (i)}
+                  <path
+                    d={shape.d}
+                    class="pick"
+                    vector-effect="non-scaling-stroke"
+                    onpointerdown={(e) => {
+                      e.stopPropagation();
+                      app.toggleLine(i);
+                    }}
+                    role="presentation"
+                  />
+                {/each}
+              {/if}
             </g>
-            <polygon points={hullOf(item)} class="hit" vector-effect="non-scaling-stroke" onpointerdown={(e) => onItemDown(e, item)} role="presentation" />
+            {#if !picking}
+              <polygon points={hullOf(item)} class="hit" vector-effect="non-scaling-stroke" onpointerdown={(e) => onItemDown(e, item)} role="presentation" />
+            {/if}
           </g>
         {/if}
       {/each}
     </g>
+
+    <!-- The printed marks, above the designs: nothing may cover them -->
+    {#if app.printMode && app.marks}
+      {@const m = app.marks}
+      <g pointer-events="none">
+        <rect x={m.left} y={m.top} width={MARK.square} height={MARK.square} class="mark" />
+        <rect x={m.right - MARK.bracket} y={m.top} width={MARK.bracket} height={MARK.line} class="mark" />
+        <rect x={m.right - MARK.line} y={m.top} width={MARK.line} height={MARK.bracket} class="mark" />
+        <rect x={m.left} y={m.bottom - MARK.bracket} width={MARK.line} height={MARK.bracket} class="mark" />
+        <rect x={m.left} y={m.bottom - MARK.line} width={MARK.bracket} height={MARK.line} class="mark" />
+      </g>
+    {/if}
 
     {#if app.preview}
       <PreviewLayer {px} />
@@ -641,6 +710,63 @@
     stroke-dasharray: 3 3;
     stroke-opacity: 0.45;
     fill-opacity: 0.04;
+  }
+
+  .items path.off {
+    stroke-opacity: 0.3;
+    stroke-dasharray: 2 3;
+  }
+
+  .items .contour {
+    fill: none;
+    stroke: #d6189d;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
+  }
+
+  .items .contour.skip {
+    stroke-opacity: 0.4;
+    stroke-dasharray: 3 3;
+  }
+
+  .items image.dim {
+    opacity: 0.55;
+  }
+
+  .items .pick {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 10;
+    cursor: pointer;
+  }
+
+  .items .pick:hover {
+    stroke: var(--accent);
+    stroke-opacity: 0.35;
+  }
+
+  .sheet-paper {
+    fill: #ffffff;
+    stroke: rgba(0, 0, 0, 0.18);
+    stroke-width: 0.25;
+    filter: drop-shadow(0 0.6px 1px rgba(0, 0, 0, 0.18));
+  }
+
+  .mark {
+    fill: #111111;
+  }
+
+  .mark-area {
+    fill: none;
+    stroke: rgba(17, 17, 17, 0.25);
+    stroke-width: 1;
+    stroke-dasharray: 2 3;
+  }
+
+  .paper-label {
+    fill: rgba(0, 0, 0, 0.35);
+    font-family: var(--font);
+    font-weight: 600;
   }
 
   .items.faded {

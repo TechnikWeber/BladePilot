@@ -43,6 +43,8 @@
     ruler: 'M3.5 15.5l12-12 5 5-12 12Z M7 12l2 2 M9.5 9.5l1.5 1.5 M12 7l2 2',
     layers: 'M12 3.5l8.5 4.5-8.5 4.5L3.5 8Z M3.5 12.5l8.5 4.5 8.5-4.5 M3.5 16.5 12 21l8.5-4.5',
     testCut: 'M4.5 4.5h15v15h-15Z M12 8l4 7H8Z',
+    printer: 'M7 9V4h10v5 M7 17H5a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 5 9h14a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 19 17h-2 M7 14h10v6H7Z',
+    contour: 'M8 5h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3Z M10 9h4v6h-4Z',
   } as const;
   export type IconName = keyof typeof ICONS;
 </script>

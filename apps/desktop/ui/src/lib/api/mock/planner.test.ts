@@ -16,7 +16,8 @@ function job(edit: (j: JobRequest) => void = () => {}): JobRequest {
   const j: JobRequest = {
     machine: 'portrait3',
     mat: '8x12',
-    items: [{ design: 1, matrix: [1, 0, 0, 1, 0, 0] }],
+    items: [{ design: 1, matrix: [1, 0, 0, 1, 0, 0], cut: { kind: 'lines', outerOnly: false, hidden: [] }, print: false }],
+    print: null,
     byColor: true,
     manualOrder: false,
     settings: blade,

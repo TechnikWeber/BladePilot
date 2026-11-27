@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.0 – 2026-11-27
+
+Stickers: pictures, contours, and print and cut. Print and cut has not been tried on a machine
+yet.
+
+- **Pictures:** PNG, JPEG, WebP, BMP and GIF open like designs. BladePilot traces their edges from
+  transparency or from the dark parts, with a threshold, ignores specks and pinholes up to a
+  size, and can invert. Without a stated resolution a picture counts as 300 dpi; large ones
+  start smaller.
+- **Contour:** a cut line at a chosen distance around everything a design shows, holes filled,
+  for SVG files and pictures. Contour lines are a pass of their own (magenta).
+- **Choose what is cut:** per design its own lines, only the outermost lines, a contour, or
+  nothing; single lines are clicked away on the mat.
+- **Print and cut** in the desktop app: the mat shows the sheet (A4 or Letter) with three
+  registration marks; **Save the print sheet** writes a PDF with the pictures and SVG artwork at
+  300 dpi and the marks; **Send** has the machine look for the marks and cuts relative to them.
+  BladePilot refuses cuts beyond or on the marks.
+- New crates: `bladepilot-trace` (masks, despeckling, distance fields, marching squares) and
+  `bladepilot-print` (mark layout, PDF sheet).
+
 ## 0.5.1 – 2026-11-27
 
 - The command-line downloads are called `bladepilot-cli-…` now (AppImage, Windows `.exe` and

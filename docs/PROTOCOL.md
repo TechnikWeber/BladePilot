@@ -130,6 +130,14 @@ searches for three marks (`TB124` for four) around the expected position, or `TB
 positions manually. The sender waits until the status reads ready before it sends the cut.
 *To verify:* the reply when the marks are not found.
 
+The printed marks, as py_silhouette's documentation describes them: a 5 mm black square at the
+top left, 20 mm corner brackets at the top right and the bottom left, 0.5 mm lines; the width
+and length the search command gets are measured from the marks' outer edges, and afterwards the
+machine counts from the top-left corner of the square. The optical sensor sits at the left of
+the carriage, so the right marks must stay well inside the reachable width. BladePilot puts the
+marks 10 mm (adjustable) inside the part of the sheet the machine reaches and keeps 3 mm clear
+around them. *To verify on a machine:* that the cut lands on the print.
+
 ## Open questions
 
 - Status codes besides 0, 1 and 2; the reply when the registration marks are not found.

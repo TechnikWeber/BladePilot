@@ -17,7 +17,8 @@ pub mod service;
 pub mod udev;
 
 use model::{
-    ApiError, AppInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, PlanInfo, Simulation, Target, UsbAccess,
+    ApiError, AppInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, PlanInfo, Simulation, Target,
+    TraceRequest, UsbAccess,
 };
 use service::Service;
 
@@ -73,6 +74,24 @@ async fn open_design(service: Shared<'_>, path: PathBuf) -> Result<DesignInfo, A
 async fn import_design(service: Shared<'_>, name: String, bytes: Vec<u8>) -> Result<DesignInfo, ApiError> {
     let service = Arc::clone(&service);
     off_main(move || service.import_design(&name, &bytes)).await
+}
+
+#[tauri::command]
+async fn trace_design(service: Shared<'_>, id: u32, trace: TraceRequest) -> Result<DesignInfo, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.trace_design(id, &trace)).await
+}
+
+#[tauri::command]
+async fn contour_path(service: Shared<'_>, id: u32, offset_mm: f64) -> Result<String, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.contour_path(id, offset_mm)).await
+}
+
+#[tauri::command]
+async fn print_sheet(service: Shared<'_>, job: JobRequest, path: PathBuf) -> Result<(), ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.print_sheet(&job, &path)).await
 }
 
 #[tauri::command]
@@ -150,6 +169,9 @@ pub fn run() {
             open_design,
             import_design,
             test_design,
+            trace_design,
+            contour_path,
+            print_sheet,
             forget_design,
             plan_job,
             simulate_job,

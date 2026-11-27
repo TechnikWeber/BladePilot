@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use bladepilot_design::kurbo::{Affine, BezPath, PathEl};
-use bladepilot_design::{Design, Polyline, Rgb, flatten};
+use bladepilot_design::{Design, Polyline, Raster, Rgb, Shape, TraceSettings, TraceSource, flatten};
 use bladepilot_device::{JobControl, Progress, RunOptions, Session, SimTransport, Transport, bluetooth, usb};
 use bladepilot_job::{CutSettings, Grouping, JobSpec, PassOrder, Plan};
 use bladepilot_machines::{Machine, Support};
@@ -18,9 +18,27 @@ use craft_plotter::Program;
 use craft_plotter::gpgl::silhouette::{Mat, Status};
 
 use crate::model::{
-    ApiError, AppInfo, ColorInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, MatInfo, PassInfo, PlacedItem,
-    PlanInfo, Settings, ShapeInfo, Simulation, StrokeInfo, Target, Tool,
+    ApiError, AppInfo, ColorInfo, DesignInfo, DeviceInfo, DeviceStatus, ImageInfo, ItemCut, JobAction, JobEvent, JobRequest, MachineInfo, MatInfo,
+    PassInfo, PlacedItem, PlanInfo, PrintSetup, Settings, ShapeInfo, Simulation, StrokeInfo, Target, Tool, TraceRequest, TraceSourceName,
 };
+
+/// The colour contour cut lines get, so they form a pass of their own (magenta, as print shops
+/// mark cut contours).
+pub const CONTOUR_COLOR: Rgb = Rgb(255, 0, 255);
+
+/// Resolution designs are printed at, pixels per mm (300 dpi).
+const PRINT_PX_PER_MM: f64 = 300.0 / 25.4;
+
+/// An imported design with what printing and tracing need besides its outlines.
+#[derive(Debug)]
+struct Stored {
+    name: String,
+    design: Design,
+    /// The SVG file, to print its artwork.
+    svg: Option<Vec<u8>>,
+    /// How a picture was traced.
+    trace: Option<TraceSettings>,
+}
 
 /// Tolerance for outlines that are only measured or drawn, mm.
 const MEASURE_TOLERANCE_MM: f64 = 0.05;
@@ -35,7 +53,9 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// The app's state: the imported designs and the job that runs.
 #[derive(Debug)]
 pub struct Service {
-    designs: Mutex<HashMap<u32, Arc<Design>>>,
+    designs: Mutex<HashMap<u32, Arc<Stored>>>,
+    /// Contours by design and offset (hundredths of a mm), in page mm.
+    contours: Mutex<HashMap<(u32, i64), Arc<BezPath>>>,
     next_design: AtomicU32,
     job: Mutex<Option<Arc<JobControl>>>,
     /// The test cut pattern's design id, once it is made.
@@ -61,6 +81,7 @@ impl Default for Service {
     fn default() -> Self {
         Service {
             designs: Mutex::default(),
+            contours: Mutex::default(),
             next_design: AtomicU32::new(1),
             job: Mutex::default(),
             test_id: Mutex::default(),
@@ -174,10 +195,71 @@ fn round3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
 
+fn trace_request(t: &TraceSettings) -> TraceRequest {
+    TraceRequest {
+        source: match t.source {
+            TraceSource::Alpha => TraceSourceName::Alpha,
+            TraceSource::Darkness => TraceSourceName::Darkness,
+        },
+        threshold: t.threshold,
+        despeckle_mm2: t.despeckle_mm2,
+        invert: t.invert,
+    }
+}
+
+fn trace_settings(r: &TraceRequest) -> TraceSettings {
+    TraceSettings {
+        source: match r.source {
+            TraceSourceName::Alpha => TraceSource::Alpha,
+            TraceSourceName::Darkness => TraceSource::Darkness,
+        },
+        threshold: r.threshold.clamp(0.01, 0.99),
+        despeckle_mm2: r.despeckle_mm2.clamp(0.0, 1000.0),
+        invert: r.invert,
+    }
+}
+
+/// A smaller copy of a picture as a PNG `data:` URL.
+fn preview_href(raster: &Raster) -> String {
+    use base64::Engine as _;
+    const MAX: u32 = 1200;
+    let Some(img) = image::RgbaImage::from_raw(raster.width, raster.height, raster.rgba.clone()) else {
+        return String::new();
+    };
+    let scale = (f64::from(MAX) / f64::from(raster.width.max(raster.height))).min(1.0);
+    let img = if scale < 1.0 {
+        let (w, h) = (((f64::from(raster.width) * scale).round() as u32).max(1), ((f64::from(raster.height) * scale).round() as u32).max(1));
+        image::imageops::resize(&img, w, h, image::imageops::FilterType::Triangle)
+    } else {
+        img
+    };
+    let mut png = Vec::new();
+    if img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).is_err() {
+        return String::new();
+    }
+    format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png))
+}
+
+fn stored_info(id: u32, stored: &Stored) -> DesignInfo {
+    let mut info = design_info(id, &stored.name, &stored.design);
+    if let Some(raster) = &stored.design.raster {
+        let (width_mm, height_mm) = raster.size_mm();
+        let trace = stored.trace.unwrap_or_else(|| TraceSettings::for_raster(raster));
+        info.image =
+            Some(ImageInfo { href: preview_href(raster), width_mm: round3(width_mm), height_mm: round3(height_mm), trace: trace_request(&trace) });
+    }
+    info.printable = stored.design.raster.is_some() || stored.svg.is_some();
+    info
+}
+
 /// What the front end needs to show a design.
 pub fn design_info(id: u32, name: &str, design: &Design) -> DesignInfo {
     let bbox = design.bbox().map_or([0.0; 4], |b| [b.x0, b.y0, b.x1, b.y1].map(round3));
     let mut points = Vec::new();
+    if let Some(raster) = &design.raster {
+        let (w, h) = raster.size_mm();
+        points.extend([(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)]);
+    }
     let mut lengths: Vec<(Option<Rgb>, usize, f64)> = Vec::new();
     for shape in &design.shapes {
         let lines = flatten(&shape.path, MEASURE_TOLERANCE_MM);
@@ -199,6 +281,7 @@ pub fn design_info(id: u32, name: &str, design: &Design) -> DesignInfo {
             bladepilot_design::Format::Svg => "svg",
             bladepilot_design::Format::Studio => "studio",
             bladepilot_design::Format::Studio3 => "studio3",
+            bladepilot_design::Format::Image => "image",
         }
         .to_string(),
         page_mm: design.page_mm.map(|(w, h)| [round3(w), round3(h)]),
@@ -211,6 +294,8 @@ pub fn design_info(id: u32, name: &str, design: &Design) -> DesignInfo {
         colors: lengths.into_iter().map(|(color, shapes, length_mm)| ColorInfo { color: hex(color), shapes, length_mm: round3(length_mm) }).collect(),
         hull: convex_hull(points).into_iter().map(|(x, y)| [round3(x), round3(y)]).collect(),
         warnings: design.warnings.clone(),
+        image: None,
+        printable: false,
     }
 }
 
@@ -313,10 +398,12 @@ impl Service {
         Service::default()
     }
 
-    fn keep(&self, name: &str, design: Design) -> DesignInfo {
+    fn keep(&self, name: &str, design: Design, svg: Option<Vec<u8>>) -> DesignInfo {
         let id = self.next_design.fetch_add(1, Ordering::Relaxed);
-        let info = design_info(id, name, &design);
-        lock(&self.designs).insert(id, Arc::new(design));
+        let trace = design.raster.as_ref().map(TraceSettings::for_raster);
+        let stored = Stored { name: name.to_string(), design, svg, trace };
+        let info = stored_info(id, &stored);
+        lock(&self.designs).insert(id, Arc::new(stored));
         info
     }
 
@@ -330,18 +417,19 @@ impl Service {
     /// Imports a design from its bytes; `name` is the file name.
     pub fn import_design(&self, name: &str, bytes: &[u8]) -> Result<DesignInfo, ApiError> {
         let design = bladepilot_design::import(bytes, Some(name))?;
-        Ok(self.keep(name, design))
+        let svg = (design.format == bladepilot_design::Format::Svg).then(|| bytes.to_vec());
+        Ok(self.keep(name, design, svg))
     }
 
     /// The test cut pattern as a design (top-left corner at the page origin), kept once.
     pub fn test_design(&self) -> DesignInfo {
         let mut id = lock(&self.test_id);
         if let Some(id) = *id
-            && let Some(design) = lock(&self.designs).get(&id)
+            && let Some(stored) = lock(&self.designs).get(&id)
         {
-            return design_info(id, "test-cut", design);
+            return stored_info(id, stored);
         }
-        let info = self.keep("test-cut", bladepilot_job::test_pattern((0.0, 0.0)));
+        let info = self.keep("test-cut", bladepilot_job::test_pattern((0.0, 0.0)), None);
         *id = Some(info.id);
         info
     }
@@ -349,25 +437,129 @@ impl Service {
     /// Forgets a design no item on the mat uses any more.
     pub fn forget_design(&self, id: u32) {
         lock(&self.designs).remove(&id);
+        lock(&self.contours).retain(|(d, _), _| *d != id);
     }
 
-    /// All items as one design in mat millimetres.
+    fn stored(&self, id: u32) -> Result<Arc<Stored>, ApiError> {
+        lock(&self.designs).get(&id).cloned().ok_or_else(|| ApiError::new("unknownDesign", format!("no design {id}")))
+    }
+
+    /// Traces a picture again with other settings; its cut lines follow.
+    pub fn trace_design(&self, id: u32, request: &TraceRequest) -> Result<DesignInfo, ApiError> {
+        let stored = self.stored(id)?;
+        let Some(raster) = &stored.design.raster else {
+            return Err(ApiError::new("notAPicture", "only pictures are traced"));
+        };
+        let settings = trace_settings(request);
+        let mut design = stored.design.clone();
+        design.shapes = bladepilot_design::trace_raster(raster, &settings);
+        design.warnings.clear();
+        let updated = Stored { name: stored.name.clone(), design, svg: None, trace: Some(settings) };
+        let info = stored_info(id, &updated);
+        lock(&self.designs).insert(id, Arc::new(updated));
+        lock(&self.contours).retain(|(d, _), _| *d != id);
+        Ok(info)
+    }
+
+    /// The contour `offset_mm` around a design, in its page mm, worked out once per offset.
+    fn contour_of(&self, id: u32, offset_mm: f64) -> Result<Arc<BezPath>, ApiError> {
+        let key = (id, (offset_mm.clamp(0.0, 100.0) * 100.0).round() as i64);
+        if let Some(path) = lock(&self.contours).get(&key) {
+            return Ok(Arc::clone(path));
+        }
+        let stored = self.stored(id)?;
+        let path = Arc::new(bladepilot_design::contour(&stored.design, stored.trace.as_ref(), key.1 as f64 / 100.0));
+        lock(&self.contours).insert(key, Arc::clone(&path));
+        Ok(path)
+    }
+
+    /// The contour as SVG path data in the design's page mm, for the mat.
+    pub fn contour_path(&self, id: u32, offset_mm: f64) -> Result<String, ApiError> {
+        let path = self.contour_of(id, offset_mm)?;
+        Ok(path_data(&path))
+    }
+
+    /// All items as one design in mat millimetres, each cut the way it asks.
     fn placed(&self, items: &[PlacedItem]) -> Result<Design, ApiError> {
-        let designs = lock(&self.designs);
         let mut out = Design::default();
         for item in items {
-            let design = designs.get(&item.design).ok_or_else(|| ApiError::new("unknownDesign", format!("no design {}", item.design)))?;
+            let stored = self.stored(item.design)?;
             if item.matrix.iter().any(|v| !v.is_finite()) {
                 return Err(ApiError::new("badTransform", "the placement is not a finite transform"));
             }
             let m = Affine::new(item.matrix);
-            for shape in &design.shapes {
-                let mut shape = shape.clone();
+            let shapes: Vec<Shape> = match &item.cut {
+                ItemCut::Lines { outer_only, hidden } => {
+                    let kept = stored.design.shapes.iter().enumerate().filter(|(i, _)| !hidden.contains(i)).map(|(_, s)| s.clone()).collect();
+                    let design = Design { shapes: kept, ..Design::default() };
+                    if *outer_only { design.outer_only().shapes } else { design.shapes }
+                }
+                ItemCut::Contour { offset_mm } => {
+                    // The offset is meant on the mat: in the design's own units it shrinks with the
+                    // item's scale.
+                    let scale = (item.matrix[0] * item.matrix[3] - item.matrix[1] * item.matrix[2]).abs().sqrt().max(1e-6);
+                    let path = self.contour_of(item.design, offset_mm / scale)?;
+                    vec![Shape { path: (*path).clone(), stroke: Some(CONTOUR_COLOR), fill: None }]
+                }
+                ItemCut::None => Vec::new(),
+            };
+            for mut shape in shapes {
                 shape.path.apply_affine(m);
                 out.shapes.push(shape);
             }
         }
         Ok(out)
+    }
+
+    /// The marks for a print setup on this machine and mat.
+    fn marks(&self, print: &PrintSetup, machine: &Machine, mat: Mat) -> Result<bladepilot_print::Marks, ApiError> {
+        let paper = bladepilot_print::paper(&print.paper).ok_or_else(|| ApiError::new("badPaper", format!("unknown paper `{}`", print.paper)))?;
+        let (down, right) = machine.cut_area_mm(mat);
+        bladepilot_print::Marks::layout(&paper, (right, down), print.inset_mm)
+            .ok_or_else(|| ApiError::new("noRoomForMarks", "the registration marks do not fit on this sheet"))
+    }
+
+    /// Writes the sheet to print, with the printed items and the marks, as a PDF to `path`.
+    pub fn print_sheet(&self, job: &JobRequest, path: &Path) -> Result<(), ApiError> {
+        let machine =
+            bladepilot_machines::by_id(&job.machine).ok_or_else(|| ApiError::new("unknownMachine", format!("unknown machine `{}`", job.machine)))?;
+        let mat = Mat::parse(&job.mat).ok_or_else(|| ApiError::new("unknownMat", format!("unknown mat `{}`", job.mat)))?;
+        let print = job.print.as_ref().ok_or_else(|| ApiError::new("noPrint", "print and cut is off"))?;
+        let marks = self.marks(print, machine, mat)?;
+        let paper = bladepilot_print::paper(&print.paper).ok_or_else(|| ApiError::new("badPaper", "unknown paper"))?;
+        let mut pictures = Vec::new();
+        for item in job.items.iter().filter(|i| i.print) {
+            let stored = self.stored(item.design)?;
+            let place = |area: [f64; 4]| -> [f64; 6] {
+                // The unit square onto the area of the page, then the item's placement.
+                let unit = [area[2], 0.0, 0.0, area[3], area[0], area[1]];
+                let m = item.matrix;
+                [
+                    m[0] * unit[0] + m[2] * unit[1],
+                    m[1] * unit[0] + m[3] * unit[1],
+                    m[0] * unit[2] + m[2] * unit[3],
+                    m[1] * unit[2] + m[3] * unit[3],
+                    m[0] * unit[4] + m[2] * unit[5] + m[4],
+                    m[1] * unit[4] + m[3] * unit[5] + m[5],
+                ]
+            };
+            if let Some(raster) = &stored.design.raster {
+                let (w, h) = raster.size_mm();
+                pictures.push(bladepilot_print::Picture {
+                    width: raster.width,
+                    height: raster.height,
+                    rgba: raster.rgba.clone(),
+                    matrix: place([0.0, 0.0, w, h]),
+                });
+            } else if let (Some(svg), Some(bb)) = (&stored.svg, stored.design.bbox()) {
+                let area = (bb.x0 - 1.0, bb.y0 - 1.0, bb.width() + 2.0, bb.height() + 2.0);
+                if let Some((width, height, rgba)) = bladepilot_print::render_svg(svg, area, PRINT_PX_PER_MM) {
+                    pictures.push(bladepilot_print::Picture { width, height, rgba, matrix: place([area.0, area.1, area.2, area.3]) });
+                }
+            }
+        }
+        let pdf = bladepilot_print::sheet(&paper, &marks, &pictures);
+        std::fs::write(path, pdf).map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))
     }
 
     fn prepare(&self, job: &JobRequest) -> Result<Prepared, ApiError> {
@@ -377,6 +569,11 @@ impl Service {
         let design = self.placed(&job.items)?;
         let mut spec = JobSpec::new(machine);
         spec.mat = mat;
+        if let Some(print) = &job.print {
+            let marks = self.marks(print, machine, mat)?;
+            spec.registration = Some(marks.registration());
+            spec.keep_out = marks.keep_out();
+        }
         spec.grouping = if job.by_color { Grouping::ByColor } else { Grouping::Single };
         spec.settings = cut_settings(&job.settings);
         let mut order = Vec::new();
@@ -423,13 +620,19 @@ impl Service {
         let plotter = session.into_transport().plotter;
         let passes = stroke_passes(&p.plan, plotter.strokes());
         let stats = plotter.stats();
+        // With registration the machine counts from the first mark: back to mat coordinates.
+        let (dx, dy) = p.plan.registration.map_or((0.0, 0.0), |r| (r.origin_right_mm, r.origin_down_mm));
         Ok(Simulation {
             plan: plan_info(&p.plan, &p.program, &p.options.pause_before),
             strokes: plotter
                 .strokes()
                 .iter()
                 .zip(passes)
-                .map(|(s, pass)| StrokeInfo { cut: s.cut, pass, points: s.points.iter().flat_map(|&(x, y)| [round2(x), round2(y)]).collect() })
+                .map(|(s, pass)| StrokeInfo {
+                    cut: s.cut,
+                    pass,
+                    points: s.points.iter().flat_map(|&(x, y)| [round2(x + dx), round2(y + dy)]).collect(),
+                })
                 .collect(),
             cut_mm: stats.cut_length_mm,
             travel_mm: stats.travel_length_mm,
@@ -617,7 +820,7 @@ impl Transport for Paced {
 
 /// The arguments that name existing files with a design extension.
 pub fn startup_files(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std::path::PathBuf> {
-    const EXTENSIONS: [&str; 4] = ["svg", "svgz", "studio", "studio3"];
+    const EXTENSIONS: [&str; 10] = ["svg", "svgz", "studio", "studio3", "png", "jpg", "jpeg", "webp", "bmp", "gif"];
     args.map(std::path::PathBuf::from)
         .filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())))
         .filter(|p| p.is_file())
@@ -727,7 +930,7 @@ mod tests {
         JobRequest {
             machine: "portrait3".to_string(),
             mat: "8x12".to_string(),
-            items: vec![PlacedItem { design: design.id, matrix }],
+            items: vec![PlacedItem { design: design.id, matrix, cut: ItemCut::default(), print: false }],
             by_color: true,
             manual_order: false,
             settings: Settings::default(),
@@ -740,6 +943,7 @@ mod tests {
                 },
                 crate::model::ColorRequest { color: Some("#ff0000".into()), settings: pen, skip: false, pause_before: false },
             ],
+            print: None,
         }
     }
 
@@ -947,6 +1151,12 @@ mod tests {
         check_file(&format!("{ui}/mock/demo.json"), &(serde_json::to_string_pretty(&design).unwrap() + "\n"));
         let test = Service::new().test_design();
         check_file(&format!("{ui}/mock/test-cut.json"), &(serde_json::to_string_pretty(&test).unwrap() + "\n"));
+        // The demo's contours at whole millimetres, so the browser shows the real thing.
+        let service = Service::new();
+        let id = service.import_design("demo.svg", &demo).unwrap().id;
+        let contours: std::collections::BTreeMap<String, String> =
+            (0..=6).map(|mm| (mm.to_string(), service.contour_path(id, f64::from(mm)).unwrap())).collect();
+        check_file(&format!("{ui}/mock/demo-contours.json"), &(serde_json::to_string_pretty(&contours).unwrap() + "\n"));
     }
 
     #[test]
@@ -958,16 +1168,120 @@ mod tests {
         let job = JobRequest {
             machine: "portrait4".into(),
             mat: "8.5x12".into(),
-            items: vec![PlacedItem { design: test.id, matrix: [1.0, 0.0, 0.0, 1.0, 190.0, 280.0] }],
+            items: vec![PlacedItem { design: test.id, matrix: [1.0, 0.0, 0.0, 1.0, 190.0, 280.0], cut: ItemCut::default(), print: false }],
             by_color: false,
             manual_order: false,
             settings: Settings { force: Some(8), ..Settings::default() },
             colors: Vec::new(),
+            print: None,
         };
         let plan = service.plan(&job).unwrap();
         assert_eq!(plan.passes.len(), 1);
         assert_eq!(plan.passes[0].paths, 2);
         assert_eq!(plan.passes[0].settings.force, Some(8));
+    }
+
+    fn demo_job(service: &Service, cut: ItemCut, print: Option<PrintSetup>) -> (JobRequest, u32) {
+        let demo = std::fs::read(format!("{}/../ui/src/lib/api/demo.svg", env!("CARGO_MANIFEST_DIR"))).unwrap();
+        let design = service.import_design("demo.svg", &demo).unwrap();
+        assert!(design.printable, "an SVG prints");
+        let job = JobRequest {
+            machine: "portrait4".into(),
+            mat: "8.5x12".into(),
+            items: vec![PlacedItem { design: design.id, matrix: [1.0, 0.0, 0.0, 1.0, 12.0, 20.0], cut, print: print.is_some() }],
+            by_color: true,
+            manual_order: false,
+            settings: Settings::default(),
+            colors: Vec::new(),
+            print,
+        };
+        (job, design.id)
+    }
+
+    #[test]
+    fn a_contour_cut_is_one_magenta_pass_around_the_design() {
+        let service = Service::new();
+        let (job, id) = demo_job(&service, ItemCut::Contour { offset_mm: 3.0 }, None);
+        let plan = service.plan(&job).unwrap();
+        assert_eq!(plan.passes.len(), 1);
+        assert_eq!(plan.passes[0].color.as_deref(), Some("#ff00ff"));
+        // The demo spans x 6..180.92 on its page; placed 12 mm right, with 3 mm around it.
+        let [x0, _, x1, _] = plan.bbox.unwrap();
+        assert!((x0 - 15.0).abs() < 0.3 && (x1 - 195.92).abs() < 0.3, "{x0} {x1}");
+        assert!(service.contour_path(id, 3.0).unwrap().starts_with('M'));
+        // Scaled up twice, the offset stays 3 mm on the mat.
+        let mut job = job;
+        job.items[0].matrix = [0.5, 0.0, 0.0, 0.5, 12.0, 20.0];
+        let [x0, ..] = service.plan(&job).unwrap().bbox.unwrap();
+        assert!((x0 - (12.0 + 3.0 - 3.0)).abs() < 0.3, "{x0}");
+    }
+
+    #[test]
+    fn lines_can_be_limited_to_the_outermost_and_single_ones_left_out() {
+        let service = Service::new();
+        let (all, _) = demo_job(&service, ItemCut::default(), None);
+        let count = |job: &JobRequest| service.plan(job).unwrap().passes.iter().map(|p| p.paths).sum::<usize>();
+        let total = count(&all);
+        let (outer, _) = demo_job(&service, ItemCut::Lines { outer_only: true, hidden: Vec::new() }, None);
+        // The holes, hearts, stars and the ring inside the tags and the badge go.
+        assert!(count(&outer) < total - 4, "{} of {total}", count(&outer));
+        let (one_less, _) = demo_job(&service, ItemCut::Lines { outer_only: false, hidden: vec![0] }, None);
+        assert_eq!(count(&one_less), total - 1);
+        let (none, _) = demo_job(&service, ItemCut::None, None);
+        assert_eq!(service.plan(&none).unwrap_err().code, "empty");
+    }
+
+    #[test]
+    fn print_and_cut_looks_for_the_marks_and_draws_the_cut_where_it_belongs() {
+        let service = Service::new();
+        let print = PrintSetup { paper: "a4".into(), inset_mm: 10.0 };
+        let (job, _) = demo_job(&service, ItemCut::Contour { offset_mm: 2.0 }, Some(print.clone()));
+        let sim = service.simulate(&job).unwrap();
+        assert!(sim.warnings.is_empty(), "{:?}", sim.warnings);
+        // The preview is back in mat coordinates: the cut starts near the design, not 10 mm off.
+        let first_cut = sim.strokes.iter().find(|s| s.cut).unwrap();
+        let (x, y) = (first_cut.points[0], first_cut.points[1]);
+        assert!(x > 12.0 && y > 20.0, "{x} {y}");
+        // On a mark: refused.
+        let mut on_mark = job.clone();
+        on_mark.items[0].matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        assert_eq!(service.plan(&on_mark).unwrap_err().code, "outsideMarks");
+        // The sheet is a PDF with the design printed.
+        let path = std::env::temp_dir().join(format!("bladepilot-sheet-{}.pdf", std::process::id()));
+        service.print_sheet(&job, &path).unwrap();
+        let pdf = std::fs::read(&path).unwrap();
+        // To look at the sheet: BLADEPILOT_KEEP_SHEET=out.pdf cargo test -p bladepilot-desktop print_and_cut
+        if let Some(keep) = std::env::var_os("BLADEPILOT_KEEP_SHEET") {
+            std::fs::copy(&path, keep).unwrap();
+        }
+        std::fs::remove_file(&path).unwrap();
+        assert!(pdf.starts_with(b"%PDF-"));
+        assert!(String::from_utf8_lossy(&pdf).contains("/Im0 Do"), "the demo is printed");
+        let mut letter = job;
+        letter.print = Some(PrintSetup { paper: "tabloid".into(), inset_mm: 10.0 });
+        assert_eq!(service.plan(&letter).unwrap_err().code, "badPaper");
+    }
+
+    #[test]
+    fn a_picture_is_traced_again_with_other_settings() {
+        let service = Service::new();
+        let mut img = image::RgbaImage::from_pixel(120, 120, image::Rgba([255, 255, 255, 255]));
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            if (30..90).contains(&x) && (30..90).contains(&y) && !((50..70).contains(&x) && (50..70).contains(&y)) {
+                *p = image::Rgba([20, 20, 20, 255]);
+            }
+        }
+        let mut png = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        let info = service.import_design("frame.png", &png).unwrap();
+        let image = info.image.clone().unwrap();
+        assert!(image.href.starts_with("data:image/png;base64,"));
+        assert_eq!(image.trace.source, TraceSourceName::Darkness);
+        assert_eq!(info.shapes.len(), 2, "the frame's outer and inner edge");
+        assert_eq!(info.bbox, [0.0, 0.0, 10.16, 10.16], "the picture's extent at 300 dpi");
+        let filled = service.trace_design(info.id, &TraceRequest { despeckle_mm2: 5.0, ..image.trace }).unwrap();
+        assert_eq!(filled.shapes.len(), 1, "the 20 px hole (2.9 mm²) is closed");
+        assert_eq!(service.trace_design(service.test_design().id, &image.trace).unwrap_err().code, "notAPicture");
     }
 
     #[test]

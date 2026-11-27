@@ -41,6 +41,14 @@ line.
 - **Open designs:** SVG (text becomes outlines) and Silhouette Studio `.studio` / `.studio3`
   files (outlines, line colours, page size). Store designs with copy protection are refused,
   never decrypted.
+- **Pictures and stickers:** open PNG, JPEG, WebP, BMP or GIF; BladePilot traces their edges
+  (from transparency or from the dark parts, with a threshold and ignoring specks) and cuts
+  them, or cuts a contour at a chosen distance around the whole picture.
+- **Print and cut** (experimental, not yet tried on a machine): pictures and SVG files are put on
+  a printable PDF sheet with three registration marks; the machine looks for the marks, then
+  cuts the contours around the printed stickers.
+- **Choose what is cut:** per design its own lines, only the outermost lines, a contour at a
+  distance, or nothing; single lines can be clicked away on the mat.
 - **Test cut:** a 12 mm square with a triangle inside, cut with one pass's settings on a free
   spot of the mat (or `bladepilot test-cut --at X,Y …`), to try force and depth before the real
   job.
@@ -76,6 +84,12 @@ experimental path. The Bluetooth button next to the USB search finds machines in
   <img alt="The animated preview: the pen has drawn, the blade cuts the second tag" src="docs/images/desktop-preview.png" width="49%">
   <img alt="The send dialog waits for the tool change from pen to blade" src="docs/images/desktop-send.png" width="49%">
 </p>
+
+For stickers, switch on **Print and cut**: a picture gets a contour around it, the mat shows the
+sheet with the registration marks, **Save the print sheet** writes the PDF to print at 100 %,
+and **Send** has the machine find the marks before it cuts.
+
+![Print and cut: stickers on an A4 sheet with registration marks, the contours in magenta](docs/images/desktop-print.png)
 
 The colour list holds each colour's tool and settings and remembers them for the next design.
 Dark mode follows the system:
@@ -172,8 +186,9 @@ work with the same machines or files; what BladePilot does differently, or means
   line with installers. It opens Silhouette Studio files, animates the exact cut order as an
   independent virtual plotter records it, keeps the window usable while cutting, and pauses,
   stops and waits for tool changes. On Windows it uses the printer driver Silhouette Studio
-  uses, so no driver has to be swapped. Planned: a registration-mark search that copes with
-  real prints (a frequent complaint in its issue tracker) and Bluetooth.
+  uses, so no driver has to be swapped. It traces pictures and cuts contours around printed
+  stickers itself; whether its registration-mark search copes better with real prints (a
+  frequent complaint in the extension's issue tracker) the next hardware test day shows.
 - **[cuthulhu](https://github.com/vcolombo/cuthulhu)** (GPL-3.0, Rust and Tauri, early work in
   progress, not released) is a desktop cutting app for the Cameo 5 Alpha and HPGL cutters, with
   a network cut host and bitmap tracing. *BladePilot* is built for the Portrait 3 and 4 and the

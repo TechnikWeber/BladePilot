@@ -6,7 +6,7 @@ members = ["crates/*", "apps/cli", "apps/desktop/src-tauri"]
 default-members = ["crates/*", "apps/cli"]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
@@ -30,6 +30,12 @@ tauri = "2.12"
 tauri-build = "2.7"
 tauri-plugin-dialog = "2.8"
 sys-locale = "0.3"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif"] }
+tiny-skia = "0.12"
+resvg = "0.50"
+pdf-writer = "0.15"
+miniz_oxide = "0.9"
+base64 = "0.23"
 
 bladepilot-machines = { path = "crates/machines" }
 bladepilot-design = { path = "crates/design" }
@@ -37,6 +43,8 @@ bladepilot-job = { path = "crates/job" }
 bladepilot-sim = { path = "crates/sim" }
 bladepilot-device = { path = "crates/device" }
 bladepilot-capture = { path = "crates/capture" }
+bladepilot-trace = { path = "crates/trace" }
+bladepilot-print = { path = "crates/print" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

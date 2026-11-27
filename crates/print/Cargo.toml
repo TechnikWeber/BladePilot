@@ -1,0 +1,18 @@
+[package]
+name = "bladepilot-print"
+description = "Print and cut: the registration-mark layout and the printable sheet as PDF."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+craft-plotter = { workspace = true }
+pdf-writer = { workspace = true }
+miniz_oxide = { workspace = true }
+resvg = { workspace = true }

@@ -1,11 +1,11 @@
 // The real backend: the Rust commands of apps/desktop/src-tauri.
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import demoSvg from './demo.svg?raw';
 import type { Backend, DesignInfo, JobEvent } from './types';
 
-const DESIGN_EXTENSIONS = ['svg', 'svgz', 'studio', 'studio3'];
+const DESIGN_EXTENSIONS = ['svg', 'svgz', 'studio', 'studio3', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
 
 async function importBytes(name: string, bytes: Uint8Array): Promise<DesignInfo> {
   return invoke('import_design', { name, bytes: Array.from(bytes) });
@@ -22,7 +22,7 @@ export const tauriBackend: Backend = {
     const picked = await open({
       multiple: true,
       directory: false,
-      filters: [{ name: 'Designs (SVG, Silhouette Studio)', extensions: DESIGN_EXTENSIONS }],
+      filters: [{ name: 'Designs (SVG, Silhouette Studio, pictures)', extensions: DESIGN_EXTENSIONS }],
     });
     const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
     const designs: DesignInfo[] = [];
@@ -33,6 +33,14 @@ export const tauriBackend: Backend = {
   openFile: async (file) => importBytes(file.name, new Uint8Array(await file.arrayBuffer())),
   openDemo: () => importBytes('demo.svg', new TextEncoder().encode(demoSvg)),
   testDesign: () => invoke('test_design'),
+  traceDesign: (id, trace) => invoke('trace_design', { id, trace }),
+  contourPath: (id, offsetMm) => invoke('contour_path', { id, offsetMm }),
+  async printSheet(job) {
+    const path = await save({ defaultPath: 'bladepilot-print.pdf', filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    if (!path) return null;
+    await invoke('print_sheet', { job, path });
+    return path;
+  },
   forgetDesign: (id) => invoke('forget_design', { id }),
   planJob: (job) => invoke('plan_job', { job }),
   simulateJob: (job) => invoke('simulate_job', { job }),

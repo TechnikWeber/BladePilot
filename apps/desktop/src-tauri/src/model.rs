@@ -84,6 +84,12 @@ pub struct DesignInfo {
     pub hull: Vec<[f64; 2]>,
     /// What the import skipped or could not read.
     pub warnings: Vec<String>,
+    /// A picture's pixels and trace settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<ImageInfo>,
+    /// The design's artwork can be printed (pictures and SVG files).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub printable: bool,
 }
 
 /// One shape, drawn as SVG path data in page mm.
@@ -147,6 +153,78 @@ pub struct PlacedItem {
     /// From page mm to mat mm, as SVG's `matrix(a b c d e f)`: `x' = a x + c y + e`,
     /// `y' = b x + d y + f`.
     pub matrix: [f64; 6],
+    /// What of the design is cut.
+    #[serde(default)]
+    pub cut: ItemCut,
+    /// Print and cut: the design is printed on the sheet.
+    #[serde(default)]
+    pub print: bool,
+}
+
+/// What of a design is cut.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ItemCut {
+    /// The design's own lines (a picture's traced edges): only the outermost if asked, and
+    /// without the shapes listed by index.
+    Lines {
+        #[serde(default)]
+        outer_only: bool,
+        #[serde(default)]
+        hidden: Vec<usize>,
+    },
+    /// The outline at a distance around everything the design shows, for stickers.
+    Contour { offset_mm: f64 },
+    /// Nothing; the design is only printed.
+    None,
+}
+
+impl Default for ItemCut {
+    fn default() -> Self {
+        ItemCut::Lines { outer_only: false, hidden: Vec::new() }
+    }
+}
+
+/// Print and cut: the sheet the designs are printed on and where the marks go.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrintSetup {
+    /// `a4` or `letter`.
+    pub paper: String,
+    /// Distance of the marks from the edges of the reachable part of the sheet, mm.
+    pub inset_mm: f64,
+}
+
+/// How a picture is traced.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceRequest {
+    /// `alpha` (where the picture is opaque) or `darkness` (where it is dark).
+    pub source: TraceSourceName,
+    /// 0 to 1.
+    pub threshold: f32,
+    /// Specks smaller than this are ignored, mm².
+    pub despeckle_mm2: f64,
+    pub invert: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TraceSourceName {
+    Alpha,
+    Darkness,
+}
+
+/// A picture of a design: what is printed, and how its lines were traced.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageInfo {
+    /// A smaller copy as a `data:` URL, for the mat.
+    pub href: String,
+    /// Where the picture lies on the page: from the origin, this wide and high, mm.
+    pub width_mm: f64,
+    pub height_mm: f64,
+    pub trace: TraceRequest,
 }
 
 /// One row of the colour list.
@@ -180,6 +258,9 @@ pub struct JobRequest {
     pub settings: Settings,
     #[serde(default)]
     pub colors: Vec<ColorRequest>,
+    /// Print and cut: look for the registration marks first.
+    #[serde(default)]
+    pub print: Option<PrintSetup>,
 }
 
 /// One planned pass.
@@ -345,6 +426,8 @@ impl From<bladepilot_job::Error> for ApiError {
             E::WrongMat { .. } => "wrongMat",
             E::OutOfBounds { .. } => "outOfBounds",
             E::BeforeOrigin { .. } => "beforeOrigin",
+            E::OutsideMarks { .. } => "outsideMarks",
+            E::OnMarks { .. } => "onMarks",
             E::Encode(_) => "encode",
         };
         ApiError::new(code, e.to_string())
@@ -379,6 +462,7 @@ impl From<bladepilot_design::Error> for ApiError {
             E::Studio(S::Unsupported { .. }) => "unsupported",
             E::Studio(S::TooLarge) => "tooLarge",
             E::Studio(_) => "studio",
+            E::Image(_) => "image",
         };
         ApiError::new(code, e.to_string())
     }

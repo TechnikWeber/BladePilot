@@ -1,6 +1,6 @@
 [package]
 name = "bladepilot-design"
-description = "Imports SVG and Silhouette Studio documents into one design model in millimetres."
+description = "Imports SVG, Silhouette Studio documents and pictures into one design model in millimetres."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,3 +16,6 @@ kurbo = { workspace = true }
 usvg = { workspace = true }
 craft-silhouette-studio = { workspace = true }
 thiserror = { workspace = true }
+bladepilot-trace = { workspace = true }
+image = { workspace = true }
+tiny-skia = { workspace = true }

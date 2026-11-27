@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use bladepilot_design::{Design, Polyline, Rgb, flatten};
 use bladepilot_machines::Machine;
 use craft_plotter::gpgl::silhouette::{self, Mat, Setup};
-use craft_plotter::{Command, Job, Operation, Program, ToolSettings};
+use craft_plotter::{Command, Job, Operation, Program, Registration, ToolSettings};
 
 pub use craft_plotter;
 
@@ -101,6 +101,12 @@ pub struct JobSpec {
     pub color_settings: BTreeMap<Rgb, CutSettings>,
     /// Largest distance between a curve and the polyline that replaces it, mm.
     pub tolerance_mm: f64,
+    /// Print and cut: the machine looks for the printed registration marks first, and everything
+    /// is cut relative to them. Paths must lie between the marks.
+    pub registration: Option<Registration>,
+    /// Areas nothing may be cut in `(x0, y0, x1, y1)`, mm: the printed marks and the room the
+    /// sensor needs around them.
+    pub keep_out: Vec<(f64, f64, f64, f64)>,
 }
 
 impl JobSpec {
@@ -116,6 +122,8 @@ impl JobSpec {
             settings: CutSettings::default(),
             color_settings: BTreeMap::new(),
             tolerance_mm: 0.02,
+            registration: None,
+            keep_out: Vec::new(),
         }
     }
 }
@@ -138,6 +146,8 @@ pub struct Plan {
     /// Cutting area `(down, right)` in mm.
     pub area_mm: (f64, f64),
     pub passes: Vec<Pass>,
+    /// Print and cut: the registration marks the machine looks for first.
+    pub registration: Option<Registration>,
 }
 
 impl Plan {
@@ -245,6 +255,10 @@ pub enum Error {
     OutOfBounds { x: f64, y: f64, right: f64, down: f64 },
     #[error("the design starts outside the cutting area, at {x:.1} mm right and {y:.1} mm down")]
     BeforeOrigin { x: f64, y: f64 },
+    #[error("the design reaches beyond the registration marks, at {x:.1} mm right and {y:.1} mm down")]
+    OutsideMarks { x: f64, y: f64 },
+    #[error("the design touches a registration mark, at {x:.1} mm right and {y:.1} mm down")]
+    OnMarks { x: f64, y: f64 },
     #[error("{0}")]
     Encode(#[from] craft_plotter::Error),
 }
@@ -298,10 +312,29 @@ pub fn plan(design: &Design, spec: &JobSpec) -> Result<Plan, Error> {
     }
     let passes: Vec<Pass> = passes.into_iter().map(|(_, pass)| pass).collect();
     let area_mm = machine.cut_area_mm(spec.mat);
-    let plan = Plan { machine, mat: spec.mat, area_mm, passes };
+    let plan = Plan { machine, mat: spec.mat, area_mm, passes, registration: spec.registration };
     let Some((x0, y0, x1, y1)) = plan.bbox_mm() else {
         return Err(Error::Empty);
     };
+    if let Some(reg) = &spec.registration {
+        let (rx0, ry0) = (reg.origin_right_mm, reg.origin_down_mm);
+        let (rx1, ry1) = (rx0 + reg.width_mm, ry0 + reg.length_mm);
+        for &(x, y) in plan.passes.iter().flat_map(|p| p.paths.iter()).flatten() {
+            if x < rx0 - EDGE_TOLERANCE_MM || y < ry0 - EDGE_TOLERANCE_MM || x > rx1 + EDGE_TOLERANCE_MM || y > ry1 + EDGE_TOLERANCE_MM {
+                return Err(Error::OutsideMarks { x, y });
+            }
+        }
+    }
+    for path in plan.passes.iter().flat_map(|p| p.paths.iter()) {
+        for w in path.windows(2) {
+            // Segments, not only points: a straight cut must not run through a mark either.
+            for &(kx0, ky0, kx1, ky1) in &spec.keep_out {
+                if segment_hits_box(w[0], w[1], (kx0, ky0, kx1, ky1)) {
+                    return Err(Error::OnMarks { x: w[0].0, y: w[0].1 });
+                }
+            }
+        }
+    }
     if x0 < -EDGE_TOLERANCE_MM || y0 < -EDGE_TOLERANCE_MM {
         return Err(Error::BeforeOrigin { x: x0, y: y0 });
     }
@@ -333,7 +366,7 @@ fn operation(pass: &Pass) -> Operation {
 
 /// The machine program for a plan.
 pub fn encode(plan: &Plan) -> Result<Program, Error> {
-    let job = Job { operations: plan.passes.iter().map(operation).collect(), ..Job::default() };
+    let job = Job { operations: plan.passes.iter().map(operation).collect(), registration: plan.registration, ..Job::default() };
     Ok(silhouette::encode(&setup(plan.machine, plan.mat), &job)?)
 }
 
@@ -357,6 +390,30 @@ pub fn pass_starts(plan: &Plan, program: &Program) -> Vec<usize> {
         moves_before += pass.paths.iter().filter(|p| p.len() >= 2).count() * usize::from(pass.settings.passes.max(1));
     }
     starts
+}
+
+/// Does the segment from `a` to `b` pass through the box (Liang–Barsky clipping)?
+fn segment_hits_box(a: (f64, f64), b: (f64, f64), (x0, y0, x1, y1): (f64, f64, f64, f64)) -> bool {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [(-dx, a.0 - x0), (dx, x1 - a.0), (-dy, a.1 - y0), (dy, y1 - a.1)] {
+        if p.abs() < 1e-12 {
+            if q < 0.0 {
+                return false;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                t0 = t0.max(r);
+            } else {
+                t1 = t1.min(r);
+            }
+            if t0 > t1 {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
@@ -557,6 +614,27 @@ mod tests {
         assert_eq!(paths.iter().map(Vec::len).collect::<Vec<_>>(), [4, 5], "triangle, then square");
         assert_eq!(plan.bbox_mm(), Some((150.0, 20.0, 150.0 + TEST_SIZE_MM, 20.0 + TEST_SIZE_MM)));
         assert!((plan.cut_length_mm() - (4.0 * TEST_SIZE_MM + 21.0)).abs() < 0.01, "{}", plan.cut_length_mm());
+    }
+
+    #[test]
+    fn print_and_cut_cuts_between_the_marks_relative_to_the_first() {
+        let reg = Registration { width_mm: 180.0, length_mm: 270.0, origin_right_mm: 10.0, origin_down_mm: 10.0, search: true, quad: false };
+        let mut spec = JobSpec::new(bladepilot_machines::by_id("portrait4").unwrap());
+        spec.registration = Some(reg);
+        spec.keep_out = vec![(10.0, 10.0, 18.0, 18.0)];
+        let plan = plan(&test_pattern((50.0, 50.0)), &spec).unwrap();
+        let program = encode(&plan).unwrap();
+        let text = program.transcript();
+        assert!(text.iter().any(|c| c == "TB123,5400,3600,0,0"), "search for the marks: {text:?}");
+        assert!(program.registration_wait.is_some());
+        // The triangle's top corner at (56, 52.97) on the page is (46, 42.97) from the mark.
+        assert!(text.iter().any(|c| c == "M859,920"), "{text:?}");
+        let err = super::plan(&test_pattern((185.0, 50.0)), &spec).unwrap_err();
+        assert!(matches!(err, Error::OutsideMarks { .. }), "{err:?}");
+        let err = super::plan(&test_pattern((12.0, 12.0)), &spec).unwrap_err();
+        assert!(matches!(err, Error::OnMarks { .. }), "{err:?}");
+        assert!(segment_hits_box((0.0, 15.0), (30.0, 15.0), (10.0, 10.0, 18.0, 18.0)), "a line through a mark");
+        assert!(!segment_hits_box((0.0, 25.0), (30.0, 25.0), (10.0, 10.0, 18.0, 18.0)));
     }
 
     #[test]

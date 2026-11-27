@@ -1,9 +1,10 @@
 // The mock backend: what the browser demo and the README screenshots run on. The machine table
 // and the demo design are the Rust side's own output (see the desktop crate's tests).
 import demoJson from './demo.json';
+import demoContours from './demo-contours.json';
 import testJson from './test-cut.json';
 import machinesJson from './machines.json';
-import { planMock, simulateMock } from './planner';
+import { offsetHull, planMock, simulateMock } from './planner';
 import { importSvg } from './svg';
 import type { Backend, DesignInfo, JobAction, JobEvent, MachineInfo } from '../types';
 
@@ -22,7 +23,7 @@ function pickFiles(): Promise<File[]> {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.accept = '.svg,.svgz,.studio,.studio3,image/svg+xml';
+    input.accept = '.svg,.svgz,.studio,.studio3,.png,.jpg,.jpeg,.webp,.gif,.bmp,image/*';
     input.addEventListener('change', () => resolve(Array.from(input.files ?? [])));
     input.addEventListener('cancel', () => resolve([]));
     input.click();
@@ -35,6 +36,42 @@ async function readText(file: File): Promise<string> {
     return new Response(stream).text();
   }
   return file.text();
+}
+
+/** A picture in the browser demo: shown and printed as it is, its outline the picture's box. */
+async function pictureDesign(file: File): Promise<DesignInfo> {
+  const href = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+  const size = await new Promise<[number, number]>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve([img.naturalWidth, img.naturalHeight]);
+    img.onerror = () => reject({ code: 'image', message: 'the picture could not be read' });
+    img.src = href;
+  });
+  const [w, h] = size.map((px) => (px * 25.4) / 300);
+  const d = `M0,0L${w},0L${w},${h}L0,${h}Z`;
+  return {
+    id: 0,
+    name: file.name,
+    format: 'image',
+    pageMm: [w, h],
+    bbox: [0, 0, w, h],
+    shapes: [{ d, stroke: '#000000', fill: null, color: '#000000' }],
+    colors: [{ color: '#000000', shapes: 1, lengthMm: 2 * (w + h) }],
+    hull: [
+      [0, 0],
+      [w, 0],
+      [w, h],
+      [0, h],
+    ],
+    warnings: ['the browser demo outlines a picture by its box; the desktop app traces it'],
+    image: { href, widthMm: w, heightMm: h, trace: { source: 'alpha', threshold: 0.5, despeckleMm2: 1, invert: false } },
+    printable: true,
+  };
 }
 
 /** The running mock job: pause, resume and stop act on it. */
@@ -74,6 +111,7 @@ export const mockBackend: Backend = {
   async openFile(file) {
     const name = file.name;
     if (/\.studio3?$/i.test(name)) throw { code: 'mockStudio', message: 'Silhouette Studio files need the desktop app' };
+    if (/\.(png|jpe?g|webp|gif|bmp)$/i.test(name)) return keep(await pictureDesign(file));
     return keep(importSvg(await readText(file), name));
   },
   async openDemo() {
@@ -82,6 +120,27 @@ export const mockBackend: Backend = {
   async testDesign() {
     const known = [...designs.values()].find((d) => d.name === 'test-cut');
     return known ?? keep(testJson as unknown as DesignInfo);
+  },
+  async traceDesign(id, trace) {
+    const design = designs.get(id);
+    if (!design?.image) throw { code: 'notAPicture', message: 'only pictures are traced' };
+    const info = { ...design, image: { ...design.image, trace } };
+    designs.set(id, info);
+    return info;
+  },
+  async contourPath(id, offsetMm) {
+    const design = designs.get(id);
+    if (!design) throw { code: 'unknownDesign', message: `no design ${id}` };
+    // The demo's real contours, worked out by the Rust side at whole millimetres.
+    const known = (demoContours as Record<string, string>)[String(Math.round(offsetMm))];
+    if (design.name === 'demo.svg' && known && Math.abs(offsetMm - Math.round(offsetMm)) < 0.05) return known;
+    const line = offsetHull(design.hull, offsetMm);
+    let d = '';
+    for (let k = 0; k + 1 < line.length; k += 2) d += `${k ? 'L' : 'M'}${line[k].toFixed(3)},${line[k + 1].toFixed(3)}`;
+    return d + 'Z';
+  },
+  async printSheet() {
+    throw { code: 'desktopOnly', message: 'the browser demo cannot write files' };
   },
   async forgetDesign(id) {
     designs.delete(id);

@@ -7,6 +7,7 @@
   import MatView from './components/MatView.svelte';
   import MachinePanel from './components/MachinePanel.svelte';
   import ColorList from './components/ColorList.svelte';
+  import PrintPanel from './components/PrintPanel.svelte';
   import ItemPanel from './components/ItemPanel.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import PreviewBar from './components/PreviewBar.svelte';
@@ -38,13 +39,21 @@
     return () => unlisten?.();
   });
 
-  /** `?demo`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?select`: states for screenshots and tests. */
+  /** `?demo`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
   async function screenshotState(params: URLSearchParams): Promise<void> {
     if (params.has('machine')) app.setMachine(params.get('machine') as string);
-    if (!params.has('demo')) return;
-    await app.openDemo();
-    if (!params.has('select')) app.selected = null;
-    else app.selected = app.items[0]?.id ?? null;
+    if (params.has('demo')) {
+      await app.openDemo();
+      if (!params.has('select')) app.selected = null;
+      else app.selected = app.items[0]?.id ?? null;
+    }
+    if (params.has('print')) {
+      app.printMode = true;
+      for (const item of app.items) item.cut = { kind: 'contour', offsetMm: 3 };
+      app.selected = app.items[0]?.id ?? null;
+      app.centerSelected();
+    }
+    if (!app.items.length) return;
     if (params.has('preview') || params.has('send')) {
       await app.replan(app.job!);
     }
@@ -157,6 +166,7 @@
   </main>
   <aside class="sidebar">
     <MachinePanel />
+    <PrintPanel />
     <ColorList />
     <ItemPanel />
   </aside>

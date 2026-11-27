@@ -51,10 +51,25 @@ export interface ColorInfo {
   lengthMm: number;
 }
 
+export interface TraceRequest {
+  source: 'alpha' | 'darkness';
+  threshold: number;
+  despeckleMm2: number;
+  invert: boolean;
+}
+
+export interface ImageInfo {
+  /** A smaller copy as a data: URL. */
+  href: string;
+  widthMm: number;
+  heightMm: number;
+  trace: TraceRequest;
+}
+
 export interface DesignInfo {
   id: number;
   name: string;
-  format: 'svg' | 'studio' | 'studio3';
+  format: 'svg' | 'studio' | 'studio3' | 'image';
   pageMm: [number, number] | null;
   /** x0, y0, x1, y1 in page mm. */
   bbox: [number, number, number, number];
@@ -62,6 +77,10 @@ export interface DesignInfo {
   colors: ColorInfo[];
   hull: [number, number][];
   warnings: string[];
+  /** Pictures: what is printed and how it was traced. */
+  image?: ImageInfo;
+  /** The artwork can be printed (pictures, SVG files). */
+  printable?: boolean;
 }
 
 export type Tool = 'blade' | 'pen';
@@ -79,9 +98,23 @@ export interface Settings {
 /** SVG `matrix(a b c d e f)` from page mm to mat mm. */
 export type Matrix = [number, number, number, number, number, number];
 
+/** What of a design is cut. */
+export type ItemCut =
+  | { kind: 'lines'; outerOnly: boolean; hidden: number[] }
+  | { kind: 'contour'; offsetMm: number }
+  | { kind: 'none' };
+
 export interface PlacedItem {
   design: number;
   matrix: Matrix;
+  cut: ItemCut;
+  /** Print and cut: printed on the sheet. */
+  print: boolean;
+}
+
+export interface PrintSetup {
+  paper: 'a4' | 'letter';
+  insetMm: number;
 }
 
 export interface ColorRequest {
@@ -99,6 +132,8 @@ export interface JobRequest {
   manualOrder: boolean;
   settings: Settings;
   colors: ColorRequest[];
+  /** Print and cut: the machine looks for the registration marks first. */
+  print: PrintSetup | null;
 }
 
 export interface PassInfo {
@@ -194,6 +229,12 @@ export interface Backend {
   openDemo(): Promise<DesignInfo>;
   /** The test cut pattern (12 mm square with a triangle inside), its corner at the page origin. */
   testDesign(): Promise<DesignInfo>;
+  /** Traces a picture again with other settings. */
+  traceDesign(id: number, trace: TraceRequest): Promise<DesignInfo>;
+  /** The contour `offsetMm` around a design, as path data in its page mm. */
+  contourPath(id: number, offsetMm: number): Promise<string>;
+  /** Asks where to save the print sheet and writes it as PDF; the path, or null when cancelled. */
+  printSheet(job: JobRequest): Promise<string | null>;
   forgetDesign(id: number): Promise<void>;
   planJob(job: JobRequest): Promise<PlanInfo>;
   simulateJob(job: JobRequest): Promise<Simulation>;

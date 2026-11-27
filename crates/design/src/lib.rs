@@ -8,6 +8,9 @@
 pub use kurbo;
 use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape as _};
 
+pub mod raster;
+pub use raster::{Raster, TraceSettings, TraceSource, contour, decode_image, import_image, trace_raster};
+
 /// Millimetres per CSS pixel: SVG user units are 1/96 in.
 pub const MM_PER_PX: f64 = 25.4 / 96.0;
 
@@ -59,6 +62,8 @@ pub enum Format {
     Studio,
     /// Silhouette Studio `.studio3` (document version 3).
     Studio3,
+    /// A picture (PNG, JPEG, WebP, BMP, GIF).
+    Image,
 }
 
 impl Format {
@@ -67,6 +72,7 @@ impl Format {
             Format::Svg => "SVG",
             Format::Studio => "Silhouette Studio (.studio)",
             Format::Studio3 => "Silhouette Studio (.studio3)",
+            Format::Image => "Picture",
         }
     }
 }
@@ -80,12 +86,19 @@ pub struct Design {
     pub shapes: Vec<Shape>,
     /// What the import skipped or could not read.
     pub warnings: Vec<String>,
+    /// A picture's pixels, its top-left corner at the page origin.
+    pub raster: Option<Raster>,
 }
 
 impl Design {
-    /// Bounding box of all shapes in mm.
+    /// Bounding box of all shapes in mm, and of the picture when there is one.
     pub fn bbox(&self) -> Option<Rect> {
-        self.shapes.iter().filter(|s| !s.path.elements().is_empty()).map(|s| s.path.bounding_box()).reduce(|a, b| a.union(b))
+        let shapes = self.shapes.iter().filter(|s| !s.path.elements().is_empty()).map(|s| s.path.bounding_box());
+        let picture = self.raster.as_ref().map(|r| {
+            let (w, h) = r.size_mm();
+            Rect::new(0.0, 0.0, w, h)
+        });
+        shapes.chain(picture).reduce(|a, b| a.union(b))
     }
 
     /// The distinct cut colours in first-seen order; `None` stands for shapes without colour.
@@ -97,6 +110,46 @@ impl Design {
             }
         }
         seen
+    }
+
+    /// Only the outermost outlines: every subpath that lies inside a closed subpath of the
+    /// design is dropped (holes, inner details, text inside a frame). Curves stay curves.
+    pub fn outer_only(&self) -> Design {
+        // Every subpath with its shape, its elements, a polygon and a bounding box.
+        let mut parts: Vec<(usize, Vec<PathEl>, Polyline, Rect, bool)> = Vec::new();
+        for (i, shape) in self.shapes.iter().enumerate() {
+            let mut current: Vec<PathEl> = Vec::new();
+            for &el in shape.path.elements() {
+                if matches!(el, PathEl::MoveTo(_)) && !current.is_empty() {
+                    parts.push(subpath_part(i, std::mem::take(&mut current)));
+                }
+                current.push(el);
+            }
+            if !current.is_empty() {
+                parts.push(subpath_part(i, current));
+            }
+        }
+        let inside = |inner: usize| {
+            let (_, _, poly, bb, _) = &parts[inner];
+            let Some(&p) = poly.first() else { return false };
+            parts.iter().enumerate().any(|(j, (_, _, outer, obb, closed))| {
+                j != inner && *closed && obb.contains_rect(*bb) && obb.area() > bb.area() && polygon_contains(outer, p)
+            })
+        };
+        let keep: Vec<bool> = (0..parts.len()).map(|i| !inside(i)).collect();
+        let mut out = Design { shapes: Vec::new(), ..self.clone() };
+        for (i, shape) in self.shapes.iter().enumerate() {
+            let mut path = BezPath::new();
+            for ((_, els, ..), _) in parts.iter().zip(&keep).filter(|((s, ..), k)| *s == i && **k) {
+                for &el in els {
+                    path.push(el);
+                }
+            }
+            if !path.elements().is_empty() {
+                out.shapes.push(Shape { path, ..shape.clone() });
+            }
+        }
+        out
     }
 
     /// Moves every shape by `(dx, dy)` mm.
@@ -111,16 +164,21 @@ impl Design {
 /// Why a file could not be opened.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("not an SVG or Silhouette Studio file")]
+    #[error("not an SVG, Silhouette Studio or picture file")]
     UnknownFormat,
     #[error("SVG: {0}")]
     Svg(#[from] usvg::Error),
     #[error("{0}")]
     Studio(#[from] craft_silhouette_studio::Error),
+    #[error("picture: {0}")]
+    Image(String),
 }
 
 /// Opens a design by content; `name` (a file name) only breaks ties.
 pub fn import(bytes: &[u8], name: Option<&str>) -> Result<Design, Error> {
+    if raster::sniff_image(bytes) {
+        return import_image(bytes);
+    }
     if craft_silhouette_studio::sniff(bytes).is_some() || name.is_some_and(craft_silhouette_studio::is_studio_path) {
         return import_studio(bytes);
     }
@@ -222,11 +280,32 @@ pub fn import_studio(bytes: &[u8]) -> Result<Design, Error> {
         page_mm: imported.page_mm,
         shapes: imported.shapes.into_iter().map(|s| Shape { path: s.path, stroke: s.line_color.map(|[r, g, b]| Rgb(r, g, b)), fill: None }).collect(),
         warnings: imported.warnings,
+        raster: None,
     })
 }
 
 /// A polyline in mm, `(x right, y down)`.
 pub type Polyline = Vec<(f64, f64)>;
+
+fn subpath_part(shape: usize, els: Vec<PathEl>) -> (usize, Vec<PathEl>, Polyline, Rect, bool) {
+    let path = BezPath::from_vec(els.clone());
+    let closed = matches!(els.last(), Some(PathEl::ClosePath));
+    let poly = flatten(&path, 0.1).into_iter().next().unwrap_or_default();
+    let bb = path.bounding_box();
+    (shape, els, poly, bb, closed)
+}
+
+/// Even-odd test: is `p` inside the closed polygon?
+fn polygon_contains(poly: &Polyline, p: (f64, f64)) -> bool {
+    let mut inside = false;
+    for w in poly.windows(2) {
+        let ((x1, y1), (x2, y2)) = (w[0], w[1]);
+        if (y1 > p.1) != (y2 > p.1) && p.0 < (x2 - x1) * (p.1 - y1) / (y2 - y1) + x1 {
+            inside = !inside;
+        }
+    }
+    inside
+}
 
 /// Flattens a path into polylines whose distance from the curve stays within `tolerance_mm`.
 /// Every subpath becomes one polyline; a closed subpath ends on its first point.
@@ -302,6 +381,33 @@ mod tests {
             let r = (x - 50.0).hypot(y - 50.0);
             assert!((r - 20.0).abs() < 0.03, "r = {r}");
         }
+    }
+
+    #[test]
+    fn only_the_outermost_outlines_stay() {
+        // A frame with a hole, a circle inside, and a separate square outside: the frame's outer
+        // edge and the separate square stay; the hole and the circle go.
+        let mut frame = BezPath::new();
+        for (x0, y0, s) in [(0.0, 0.0, 50.0), (10.0, 10.0, 30.0)] {
+            frame.move_to((x0, y0));
+            frame.line_to((x0 + s, y0));
+            frame.line_to((x0 + s, y0 + s));
+            frame.line_to((x0, y0 + s));
+            frame.close_path();
+        }
+        let circle = kurbo::Circle::new((25.0, 25.0), 5.0).to_path(0.01);
+        let mut square = BezPath::new();
+        square.move_to((60.0, 0.0));
+        square.line_to((70.0, 0.0));
+        square.line_to((70.0, 10.0));
+        square.close_path();
+        let shape = |path: BezPath| Shape { path, stroke: Some(Rgb(0, 0, 0)), fill: None };
+        let design = Design { shapes: vec![shape(frame), shape(circle), shape(square)], ..Design::default() };
+        let outer = design.outer_only();
+        assert_eq!(outer.shapes.len(), 2, "frame and square");
+        let moves = outer.shapes[0].path.elements().iter().filter(|e| matches!(e, PathEl::MoveTo(_))).count();
+        assert_eq!(moves, 1, "the frame keeps its outer edge only");
+        assert_eq!(outer.shapes[0].path.bounding_box(), Rect::new(0.0, 0.0, 50.0, 50.0));
     }
 
     #[test]
