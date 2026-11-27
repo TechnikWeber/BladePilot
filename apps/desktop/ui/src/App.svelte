@@ -12,6 +12,7 @@
   import PreviewBar from './components/PreviewBar.svelte';
   import SendDialog from './components/SendDialog.svelte';
   import Toasts from './components/Toasts.svelte';
+  import UsbAccessDialog from './components/UsbAccessDialog.svelte';
 
   let ready = $state(false);
 
@@ -99,7 +100,7 @@
 
   function onKey(e: KeyboardEvent): void {
     const target = e.target as HTMLElement;
-    if (target.closest('input, select, textarea') || app.send) return;
+    if (target.closest('input, select, textarea') || app.send || app.usbDialog) return;
     const ctrl = e.ctrlKey || e.metaKey;
     const step = e.shiftKey ? 10 : 1;
     if (ctrl && e.key.toLowerCase() === 'o') {
@@ -162,6 +163,7 @@
   <StatusBar />
 </div>
 <SendDialog />
+<UsbAccessDialog />
 <Toasts />
 
 <style>

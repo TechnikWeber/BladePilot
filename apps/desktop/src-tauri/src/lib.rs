@@ -14,8 +14,11 @@ use tauri::ipc::Channel;
 
 pub mod model;
 pub mod service;
+pub mod udev;
 
-use model::{ApiError, AppInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, PlanInfo, Simulation, Target};
+use model::{
+    ApiError, AppInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, PlanInfo, Simulation, Target, UsbAccess,
+};
 use service::Service;
 
 type Shared<'a> = State<'a, Arc<Service>>;
@@ -28,6 +31,20 @@ async fn off_main<T: Send + 'static>(work: impl FnOnce() -> Result<T, ApiError> 
 #[tauri::command]
 fn app_info() -> AppInfo {
     service::app_info()
+}
+
+#[tauri::command]
+async fn usb_access() -> Result<UsbAccess, ApiError> {
+    off_main(|| Ok(udev::status())).await
+}
+
+#[tauri::command]
+async fn install_usb_access() -> Result<UsbAccess, ApiError> {
+    off_main(|| {
+        udev::install()?;
+        Ok(udev::status())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -126,6 +143,8 @@ pub fn run() {
         .manage(Arc::new(Service::new()))
         .invoke_handler(tauri::generate_handler![
             app_info,
+            usb_access,
+            install_usb_access,
             machines,
             startup_files,
             open_design,

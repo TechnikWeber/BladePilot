@@ -14,6 +14,20 @@ pub struct AppInfo {
     pub platform: String,
 }
 
+/// Whether this user may open the machine over USB (Linux: a udev rule grants it).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsbAccess {
+    /// The system needs a rule at all (Linux).
+    pub needed: bool,
+    /// A rule for the machines is in place.
+    pub installed: bool,
+    /// The command that sets the rule up in a terminal.
+    pub command: String,
+    /// `pkexec` is there to ask for the password and set it up from the app.
+    pub can_elevate: bool,
+}
+
 /// One machine model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

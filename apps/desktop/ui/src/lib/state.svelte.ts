@@ -5,6 +5,7 @@ import { backend } from './api';
 import type {
   ApiError,
   AppInfo,
+  UsbAccess,
   ColorInfo,
   DesignInfo,
   DeviceInfo,
@@ -130,6 +131,7 @@ export interface View {
 }
 
 const PREFS_KEY = 'bladepilot.prefs.v1';
+const USB_QUIET_KEY = 'bladepilot.usbAccess.quiet';
 
 export function defaultSettings(tool: Tool = 'blade'): Settings {
   return { tool, force: null, speed: null, depth: null, repeats: 1, overcutMm: 0, bladeOffsetMm: 0.9 };
@@ -162,6 +164,9 @@ let planSeq = 0;
 
 class AppState {
   info = $state<AppInfo | null>(null);
+  usb = $state<UsbAccess | null>(null);
+  /** The USB set-up dialog is open. */
+  usbDialog = $state(false);
   machines = $state<MachineInfo[]>([]);
   machineId = $state('portrait3');
   matId = $state('8x12');
@@ -366,6 +371,34 @@ class AppState {
     this.machineId = machine.id;
     this.matId = machine.mats.some((m) => m.id === stored.matId) ? (stored.matId as string) : machine.defaultMat;
     if (!stored.unit && /^en-(US|LR|MM)/i.test(info.language)) this.unit = 'in';
+    void this.checkUsbAccess(true);
+  }
+
+  /** Looks for the udev rule; at start the dialog opens once unless the user said not to ask. */
+  async checkUsbAccess(atStart = false): Promise<void> {
+    try {
+      this.usb = await backend.usbAccess();
+    } catch {
+      this.usb = null;
+      return;
+    }
+    const missing = this.usb.needed && !this.usb.installed;
+    let quiet = false;
+    try {
+      quiet = localStorage.getItem(USB_QUIET_KEY) === '1';
+    } catch {
+      // No storage: ask every time.
+    }
+    if (atStart && missing && !quiet) this.usbDialog = true;
+  }
+
+  usbNeverAsk(): void {
+    try {
+      localStorage.setItem(USB_QUIET_KEY, '1');
+    } catch {
+      // Nothing to remember it in.
+    }
+    this.usbDialog = false;
   }
 
   savePrefs(): void {

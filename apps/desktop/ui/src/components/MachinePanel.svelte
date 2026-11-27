@@ -84,6 +84,12 @@
     {#if toolText}<span class="chip">{toolText}</span>{/if}
     <button class="icon-btn sm" title={t('machine.refresh')} disabled={app.checking} onclick={() => app.checkStatus()}><Icon name="refresh" size={14} /></button>
   </div>
+  {#if app.usb?.needed && !app.usb.installed}
+    <div class="note warn usb">
+      <Icon name="usb" size={15} /><span>{t('usb.missing')}</span>
+      <button class="btn" onclick={() => (app.usbDialog = true)}>{t('usb.fix')}</button>
+    </div>
+  {/if}
   {#if mismatch}
     <div class="note warn"><Icon name="info" size={15} />{t('machine.otherModel', { found: mismatch.name })}</div>
   {/if}
@@ -217,6 +223,20 @@
 
   :global(.pulse) {
     animation: pulse 1s ease-in-out infinite;
+  }
+
+  .note.usb {
+    align-items: center;
+  }
+
+  .note.usb span {
+    flex: 1;
+  }
+
+  .note.usb .btn {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
   }
 
   .note.warn {

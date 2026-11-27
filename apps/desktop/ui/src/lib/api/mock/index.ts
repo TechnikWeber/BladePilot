@@ -50,6 +50,16 @@ export const mockBackend: Backend = {
   async machines() {
     return machines;
   },
+  async usbAccess() {
+    // `?udev` shows the set-up dialog in the browser demo, for screenshots.
+    const missing = new URLSearchParams(location.search).has('udev');
+    const command =
+      "printf '%s\\n' 'SUBSYSTEM==\"usb\", ATTR{idVendor}==\"0b4d\", TAG+=\"uaccess\"' | sudo tee /etc/udev/rules.d/70-bladepilot.rules > /dev/null && sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=usb";
+    return { needed: missing, installed: !missing, command, canElevate: true };
+  },
+  async installUsbAccess() {
+    throw { code: 'elevate', message: 'the browser demo cannot change the system' };
+  },
   async startupFiles() {
     return [];
   },

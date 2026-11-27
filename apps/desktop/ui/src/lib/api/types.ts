@@ -10,6 +10,13 @@ export interface AppInfo {
   mock?: boolean;
 }
 
+export interface UsbAccess {
+  needed: boolean;
+  installed: boolean;
+  command: string;
+  canElevate: boolean;
+}
+
 export interface MatInfo {
   /** `8x12`, `12x24`, … or `none`. */
   id: string;
@@ -172,6 +179,10 @@ export type JobAction = 'pause' | 'resume' | 'stop';
 export interface Backend {
   readonly mock: boolean;
   appInfo(): Promise<AppInfo>;
+  /** Linux: is the udev rule for USB access in place? */
+  usbAccess(): Promise<UsbAccess>;
+  /** Sets the rule up, asking for the administrator password (pkexec). */
+  installUsbAccess(): Promise<UsbAccess>;
   machines(): Promise<MachineInfo[]>;
   /** Design files named on the command line, to open at start. */
   startupFiles(): Promise<string[]>;
