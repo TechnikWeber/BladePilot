@@ -3,6 +3,10 @@
 Linux cutting software for Silhouette cutters, Portrait 3 and 4 first. Rust, MIT, public at
 github.com/TechnikWeber/BladePilot.
 
+If `re/README.md` exists, read it first: it holds the private, machine-local notes (tools,
+paths, the reverse-engineering workspace). It is git-ignored and exists only on the
+maintainer's computers.
+
 ## Working rules
 
 - Talk to the maintainer in German. Everything in the repository is English.
@@ -48,6 +52,26 @@ one is still open). Everything is built and tested against the virtual plotter f
 The hardware test day happens on the maintainer's Windows PC, in a clone of this repository,
 with Claude Code running the captures: follow [docs/HARDWARE-DAY.md](docs/HARDWARE-DAY.md)
 step by step there. Private material on that PC goes into `re\` as well.
+
+## Next: the desktop app (phase 3)
+
+The plan, decided with the maintainer; adjust details, not the direction:
+
+- Tauri 2 in `apps/desktop`: `src-tauri/` is the Rust crate `bladepilot-desktop`, a thin layer
+  of commands over the workspace crates; `ui/` is the web front end (Vite, TypeScript,
+  Svelte 5, own CSS, no UI kit). Plain `cargo build` must keep working for the rest of the
+  workspace.
+- It has to look good: a mat that looks like a real cutting mat (grid, rulers, cutting area),
+  the design drawn in its colours, drag to place, rotate and scale; a colour list with tool,
+  force, speed, depth and repeats per colour; a machine panel with status; a send dialog with
+  progress; an animated preview of the cutting order from the virtual plotter. Light and dark
+  theme from the system, English and German from the system language.
+- Long jobs run off the UI thread; the UI never freezes while cutting.
+- The front end has a mock backend so it runs in a plain browser: that is how screenshots for
+  the README are made (headless Chrome), and maybe later a web demo.
+- Releases: extend `release.yml` with the Tauri bundles (AppImage, deb, rpm, msi/exe, dmg).
+- Then phase 2 (`.studio3` beyond outlines, test documents from Silhouette Studio under Wine)
+  and phase 4 (print and cut).
 
 ## Releases
 
