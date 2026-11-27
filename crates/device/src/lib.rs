@@ -201,7 +201,7 @@ pub struct Session<T: Transport> {
     pub marks_timeout: Duration,
     /// How long the machine may take to finish after the last byte.
     pub finish_timeout: Duration,
-    /// Bytes that arrived after the first ETX of a reply, kept for the next query.
+    /// Bytes that arrived after the first ETX of a reply; dropped before the next query.
     spare: Vec<u8>,
 }
 
@@ -235,11 +235,30 @@ impl<T: Transport> Session<T> {
         self.transport.write_all(silhouette::INIT.as_bytes())
     }
 
-    /// Writes a query and returns its reply up to and including the first ETX.
+    /// Writes a query and returns its reply up to and including the first ETX. Without a reply
+    /// it asks once more: queries change nothing, and over Bluetooth a reply can get stuck right
+    /// after connecting.
     fn query(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
+        match self.query_once(bytes) {
+            Err(Error::NoReply) if !self.poll_interval.is_zero() => self.query_once(bytes),
+            other => other,
+        }
+    }
+
+    fn query_once(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
+        // The machine only speaks when asked: whatever is still waiting is a late answer to an
+        // earlier query and would shift every reply after it.
+        self.spare.clear();
+        if !self.poll_interval.is_zero() {
+            for _ in 0..8 {
+                if self.transport.read(Duration::from_millis(1))?.is_empty() {
+                    break;
+                }
+            }
+        }
         self.transport.write_all(bytes)?;
         let deadline = Instant::now() + self.reply_timeout;
-        let mut reply = std::mem::take(&mut self.spare);
+        let mut reply = Vec::new();
         loop {
             if let Some(end) = reply.iter().position(|b| *b == ETX) {
                 self.spare = reply.split_off(end + 1);
