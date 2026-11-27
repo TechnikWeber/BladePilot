@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=BladePilot
+Comment=Cutting software for Silhouette Portrait and Cameo machines
+Exec=bladepilot
+Icon=bladepilot
+Terminal=true
+Categories=Graphics;Utility;
+Keywords=cutter;plotter;vinyl;silhouette;cameo;portrait;

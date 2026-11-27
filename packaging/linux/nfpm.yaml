@@ -1,0 +1,29 @@
+# .deb and .rpm for the bladepilot command line, built by packaging/linux/package.sh.
+name: bladepilot
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+release: "1"
+section: graphics
+priority: optional
+maintainer: TechnikWeber <TechnikWeber@users.noreply.github.com>
+vendor: BladePilot
+homepage: https://github.com/TechnikWeber/BladePilot
+license: MIT
+description: |
+  Cutting software for Silhouette Portrait and Cameo machines.
+  Opens SVG and Silhouette Studio (.studio3) files, plans the cut and sends
+  it to the machine, or draws it with a virtual plotter first.
+contents:
+  - src: ./dist/stage/bladepilot
+    dst: /usr/bin/bladepilot
+    file_info:
+      mode: 0755
+  - src: ./packaging/linux/70-bladepilot.rules
+    dst: /usr/lib/udev/rules.d/70-bladepilot.rules
+  - src: ./README.md
+    dst: /usr/share/doc/bladepilot/README.md
+  - src: ./LICENSE
+    dst: /usr/share/licenses/bladepilot/LICENSE
+scripts:
+  postinstall: ./packaging/linux/postinstall.sh

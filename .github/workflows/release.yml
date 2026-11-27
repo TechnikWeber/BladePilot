@@ -1,0 +1,158 @@
+name: release
+
+# A tag v* builds every package and publishes a GitHub release. Started by hand, it only builds
+# and keeps the files as workflow artifacts, to test the packaging.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        name: Version from Cargo.toml, checked against the tag
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$version" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $version"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-musl, arch: x86_64, nfpm_arch: amd64, nfpm_asset: Linux_x86_64 }
+          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, arch: aarch64, nfpm_arch: arm64, nfpm_asset: Linux_arm64 }
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Tools
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q musl-tools file
+          mkdir -p "$HOME/.local/bin" && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v2.49.0/nfpm_2.49.0_${{ matrix.nfpm_asset }}.tar.gz" | tar -xz -C "$HOME/.local/bin" nfpm
+          curl -fsSL -o "$HOME/.local/bin/appimagetool" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage"
+          chmod +x "$HOME/.local/bin/appimagetool"
+      - name: Build (static, runs on any distribution)
+        run: cargo build --release --locked -p bladepilot-cli --target ${{ matrix.target }}
+      - name: Smoke test
+        run: |
+          target/${{ matrix.target }}/release/bladepilot --version
+          target/${{ matrix.target }}/release/bladepilot cut hardware-tests/T3-label.svg --simulate /tmp/t3.svg
+      - name: Package
+        run: packaging/linux/package.sh ${{ matrix.target }} ${{ matrix.arch }} ${{ matrix.nfpm_arch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/out/*
+
+  windows:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc, arch: x86_64 }
+          - { target: aarch64-pc-windows-msvc, arch: arm64 }
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked -p bladepilot-cli --target ${{ matrix.target }}
+      - name: Smoke test
+        if: matrix.arch == 'x86_64'
+        run: |
+          target/${{ matrix.target }}/release/bladepilot.exe --version
+          target/${{ matrix.target }}/release/bladepilot.exe cut hardware-tests/T3-label.svg --simulate t3.svg
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "BladePilot-$env:VERSION-windows-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force -Path "dist/$name", "dist/out" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/bladepilot.exe" "dist/$name/"
+          Copy-Item README.md, LICENSE "dist/$name/"
+          Compress-Archive -Path "dist/$name/*" -DestinationPath "dist/out/$name.zip"
+          Copy-Item "target/${{ matrix.target }}/release/bladepilot.exe" "dist/out/$name.exe"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ matrix.arch }}
+          path: dist/out/*
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Build both architectures and join them
+        run: |
+          cargo build --release --locked -p bladepilot-cli --target aarch64-apple-darwin
+          cargo build --release --locked -p bladepilot-cli --target x86_64-apple-darwin
+          lipo -create -output bladepilot target/aarch64-apple-darwin/release/bladepilot target/x86_64-apple-darwin/release/bladepilot
+          ./bladepilot --version
+      - name: Package
+        run: |
+          name="BladePilot-$VERSION-macos-universal"
+          mkdir -p "dist/$name" dist/out
+          cp bladepilot README.md LICENSE "dist/$name/"
+          tar -C dist -czf "dist/out/$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-universal
+          path: dist/out/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, linux, windows, macos]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums and notes
+        run: |
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          awk -v v="$VERSION" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          test -s notes.md || echo "BladePilot $VERSION" > notes.md
+      - name: Publish
+        run: |
+          flags=()
+          [[ "$VERSION" == 0.* || "$VERSION" == *-* ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" dist/* --title "BladePilot $VERSION" --notes-file notes.md "${flags[@]}"

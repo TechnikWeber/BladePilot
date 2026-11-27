@@ -2,15 +2,18 @@
 
 <p>
   <img alt="Status: proof of concept" src="https://img.shields.io/badge/status-proof%20of%20concept-lightgrey">
+  <a href="https://github.com/TechnikWeber/BladePilot/releases"><img alt="Download" src="https://img.shields.io/github/v/release/TechnikWeber/BladePilot?include_prereleases&label=download&color=2ea44f"></a>
+  <a href="https://github.com/TechnikWeber/BladePilot/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/TechnikWeber/BladePilot/total?color=blue"></a>
   <a href="https://github.com/TechnikWeber/BladePilot/actions/workflows/ci.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/TechnikWeber/BladePilot/ci.yml?branch=main&label=build"></a>
-  <img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-blue">
+  <img alt="Platform: Linux | Windows | macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-blue">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 <p>
+  <a href="https://github.com/TechnikWeber/BladePilot/releases"><b>Download</b></a> &nbsp;·&nbsp;
+  <a href="#download"><b>Install</b></a> &nbsp;·&nbsp;
   <a href="docs/ROADMAP.md"><b>Roadmap</b></a> &nbsp;·&nbsp;
   <a href="docs/ARCHITECTURE.md"><b>How it works</b></a> &nbsp;·&nbsp;
-  <a href="#supported-machines"><b>Supported machines</b></a> &nbsp;·&nbsp;
   <a href="docs/HARDWARE-DAY.md"><b>Hardware test day</b></a>
 </p>
 
@@ -35,26 +38,42 @@ vendor software for the machines you own, written in Rust.
   [`craft-plotter`](https://github.com/storytold/craft-libs/tree/main/crates/plotter).
 - **Virtual plotter:** answers status, version and tool queries like a machine, records every
   cut, warns about anything outside the cutting area and draws the job as SVG.
-- **Command line:** `machines`, `devices`, `inspect`, `cut --dry-run`, `cut --simulate`.
-- **USB:** finds connected machines. Sending is written but waits for its first hardware test.
+- **Command line:** `machines`, `devices`, `inspect`, `cut --dry-run`, `cut --simulate`, and
+  `replay` for USB captures made with Wireshark.
+- **USB:** finds connected machines. Sending is written for Linux, macOS and Windows (there
+  through the same driver Silhouette Studio uses) and waits for its first hardware test.
 
 The desktop app with a mat view, print and cut, and more import formats are next: see the
 [roadmap](docs/ROADMAP.md).
 
-## Try it
+## Download
 
-Needs [Rust](https://rustup.rs) 1.95 or newer.
+Pick the file for your system from the [releases](https://github.com/TechnikWeber/BladePilot/releases):
+
+| System | File | Start |
+|---|---|---|
+| Any Linux | `BladePilot-…-x86_64.AppImage` (or `aarch64`) | `chmod +x BladePilot-*.AppImage`, then run it |
+| Fedora, openSUSE | `bladepilot-….x86_64.rpm` | `sudo dnf install ./bladepilot-*.rpm` |
+| Debian, Ubuntu, Raspberry Pi OS | `bladepilot_…_amd64.deb` (or `arm64`) | `sudo apt install ./bladepilot_*.deb` |
+| Windows | `BladePilot-…-windows-x86_64.exe` (or `arm64`) | run it from a terminal |
+| macOS | `BladePilot-…-macos-universal.tar.gz` | unpack, `xattr -d com.apple.quarantine bladepilot` |
+
+The `.rpm` and `.deb` also install the udev rule that gives you access to the machine over USB.
+Windows and macOS warn about an unknown developer, because the files are not signed.
+
+Then, in a terminal:
 
 ```sh
-git clone https://github.com/TechnikWeber/BladePilot && cd BladePilot
-cargo run -p bladepilot-cli -- machines
-cargo run -p bladepilot-cli -- inspect my-design.studio3
-cargo run -p bladepilot-cli -- cut my-design.svg --machine portrait3 --simulate preview.svg
-cargo run -p bladepilot-cli -- cut my-design.svg --machine portrait4 --by-color --dry-run
+bladepilot cut my-design.svg --simulate preview.svg
 ```
 
-`--simulate` runs the job on the virtual plotter and draws what it would cut. `--dry-run`
-prints the commands a machine would receive, or writes the exact bytes with `--bytes FILE`.
+That plans the cut, runs it on the virtual plotter and draws the result into `preview.svg`.
+`bladepilot inspect FILE` shows what a design contains, `bladepilot cut FILE --dry-run` prints
+the commands a machine would receive, and `bladepilot machines` lists the supported machines.
+
+### Build from source
+
+With [Rust](https://rustup.rs) 1.95 or newer: `cargo run -p bladepilot-cli -- --help`.
 
 ## Supported machines
 
