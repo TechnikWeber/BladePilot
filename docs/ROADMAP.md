@@ -26,7 +26,7 @@ the virtual plotter first, then checked against the real machine on a
       finds the machine, lists the conversation with repeated status polls folded, runs it
       through the virtual plotter and draws it; `--commands-only` for comparing two captures
 - [x] udev rule for USB access on Linux (`packaging/linux/70-bladepilot.rules`)
-- [ ] Release builds for Linux, Windows and macOS on every tag
+- [x] Release builds for Linux, Windows and macOS on every tag
 - [ ] Review the USB transport against the protocol notes; time-outs, unplugging, errors
 - [x] Robustness tests: random and damaged input for the virtual plotter, the capture reader
       and the importers (fixed seed, runs in CI)
