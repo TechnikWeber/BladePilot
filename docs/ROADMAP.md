@@ -15,8 +15,8 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Virtual plotter: status, version and tool replies, cut recording, warnings, SVG drawing
 - [x] Job protocol over any transport, with registration-mark wait
 - [x] Command line: `machines`, `devices`, `inspect`, `cut --dry-run`, `cut --simulate`
-- [x] USB transport written, not yet run on hardware: nusb on Linux and macOS, the USB printer
-      class driver on Windows (works next to Silhouette Studio without changing drivers)
+- [x] USB transport: nusb on Linux and macOS, the USB printer class driver on Windows (works
+      next to Silhouette Studio without changing drivers); run on a Portrait 4 on Windows
 
 ## Phase 1: check everything that can be checked without hardware
 
@@ -62,22 +62,24 @@ the virtual plotter first, then checked against the real machine on a
 - [ ] Mark search with three or four marks, manual positioning as fallback
 - [ ] Calibration sheet and stored offsets per machine
 
-## Phase 5: hardware test day
+## Phase 5: hardware test days
 
-- [ ] Captures of Silhouette Studio and BladePilot for the test jobs in
-      [HARDWARE-DAY.md](HARDWARE-DAY.md)
-- [ ] Fix the differences, record the open protocol questions in [PROTOCOL.md](PROTOCOL.md)
-- [ ] First release
+- [x] First day (2026-11-27, Portrait 4): captures of Silhouette Studio and BladePilot for T0
+      to T3 and Bluetooth; the facts are in [PROTOCOL.md](PROTOCOL.md)
+- [x] Fixed: pen passes no longer send the blade depth; the tool is checked before passes;
+      a job only counts as done once the machine was seen moving
+- [ ] Second day: tool change (T4), stopping a running job (T6), the desktop app (T7) over USB
+      and Bluetooth, a long job to learn the machine's buffer, Studio's test cut (T8)
+- [ ] First release that is no longer marked experimental
 
 ## Later
 
 - [ ] Material profiles with a test cut and per-machine corrections, chosen per colour
 - [ ] Long jobs on roll media without a mat, tiled when longer than the machine allows
 - [ ] Inkscape extension "Send to BladePilot"
-- [ ] Bluetooth. Portrait 2 and newer have it, as Bluetooth Classic (RFCOMM, a serial port once
-      paired) and Bluetooth Low Energy, according to inkscape-silhouette's documentation. First
-      a serial transport for the paired port (a COM port on Windows, `/dev/rfcomm*` on Linux,
-      `/dev/cu.*` on macOS), then BLE; the hardware test day checks what the Portrait offers.
+- [x] Bluetooth on Windows and Linux: the same GP-GL over Bluetooth Classic (RFCOMM channel 1),
+      no pairing; a search in the command line (`devices --bluetooth`) and the desktop app
+- [ ] Bluetooth on macOS (IOBluetooth); until then the app says to use USB
 - [ ] Move the head with the arrow keys before a job or a test cut
 - [ ] DXF and PDF import
 - [ ] Cameo-only features as experimental: second tool holder, electrostatic mat
@@ -120,7 +122,7 @@ from Inkscape or any other editor, or from Silhouette Studio files.
 | Two tool holders, electrostatic mat (Cameo) | later, experimental |
 | Long cuts from the roll, tiling | later |
 | Weeding lines and boxes, replicate and nesting to save material | later |
-| Bluetooth | later (see above) |
+| Bluetooth | Windows and Linux: done, experimental; macOS later |
 | Design tools: shapes, text, trace, offset, weld, knife, sketch fills | not planned beyond offset and trace for print and cut; use Inkscape |
 | Design store, library, cloud | out of scope |
 | Firmware updates | out of scope |
