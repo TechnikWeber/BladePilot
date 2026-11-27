@@ -52,3 +52,21 @@ fn a_damaged_studio_file_is_an_error_not_a_panic() {
     bytes.extend_from_slice(&[0u8; 64]);
     assert!(import(&bytes, Some("broken.studio3")).is_err());
 }
+
+#[test]
+fn text_becomes_outlines_when_a_font_is_there() {
+    // Whether the system has any font at all: a bare CI image may have none.
+    let probe = br#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><text x="1" y="9" font-size="8">x</text></svg>"#;
+    let fonts = !import(probe, Some("probe.svg")).unwrap().shapes.is_empty();
+    let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="80mm" height="30mm" viewBox="0 0 80 30">
+        <text x="5" y="20" font-family="sans-serif" font-size="12" fill="#000000">Blade</text>
+    </svg>"##;
+    let design = import(svg, Some("text.svg")).unwrap();
+    if !fonts {
+        assert!(design.shapes.is_empty(), "without fonts there is nothing to outline");
+        return;
+    }
+    assert!(!design.shapes.is_empty(), "the word became outlines");
+    let bb = design.bbox().unwrap();
+    assert!(bb.x0 >= 4.0 && bb.x1 <= 80.0 && bb.y1 <= 30.0, "{bb:?}");
+}
