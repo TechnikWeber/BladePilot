@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use bladepilot_design::{Design, Rgb};
-use bladepilot_device::{JobControl, Progress, RunOptions, Session, SimTransport, usb};
+use bladepilot_device::{JobControl, Progress, RunOptions, Session, SimTransport, Transport, bluetooth, usb};
 use bladepilot_job::{CutSettings, Grouping, JobSpec, Plan};
 use bladepilot_machines::{Machine, Support};
 use bladepilot_sim::{Config, VirtualPlotter};
@@ -24,8 +24,12 @@ struct Cli {
 enum Command {
     /// List the machines BladePilot knows
     Machines,
-    /// List cutting machines connected over USB
-    Devices,
+    /// List cutting machines connected over USB, and with --bluetooth those in Bluetooth range
+    Devices {
+        /// Also search for machines over Bluetooth (about ten seconds)
+        #[arg(long)]
+        bluetooth: bool,
+    },
     /// Show what a design file contains
     Inspect {
         /// SVG, .studio or .studio3 file
@@ -75,6 +79,9 @@ struct CutArgs {
     /// With --by-color: shapes of this colour are drawn with a pen (repeatable), e.g. "#ff0000"
     #[arg(long, value_name = "HEX", requires = "by_color")]
     pen_color: Vec<String>,
+    /// With --pen-color: force for the pen passes (default: the machine's own, not --force)
+    #[arg(long, requires = "pen_color")]
+    pen_force: Option<u32>,
     #[command(flatten)]
     tool: ToolArgs,
     #[command(flatten)]
@@ -140,9 +147,13 @@ struct OutputArgs {
     /// Run the job on the virtual plotter and draw it into this SVG file
     #[arg(long, value_name = "SVG")]
     simulate: Option<PathBuf>,
-    /// Send to a real machine over USB, which has not been tested on hardware yet
+    /// Send to a real machine over USB
     #[arg(long, conflicts_with_all = ["dry_run", "simulate"])]
     experimental_usb: bool,
+    /// Send to a real machine over Bluetooth: its address (see `bladepilot devices --bluetooth`),
+    /// or none to search for it
+    #[arg(long, value_name = "ADDRESS", num_args = 0..=1, conflicts_with_all = ["dry_run", "simulate", "experimental_usb"])]
+    experimental_bluetooth: Option<Option<String>>,
 }
 
 fn parse_pair(s: &str) -> Result<(f64, f64), String> {
@@ -168,7 +179,7 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Machines => machines(),
-        Command::Devices => devices(),
+        Command::Devices { bluetooth } => devices(bluetooth),
         Command::Inspect { file } => inspect(&file),
         Command::Cut(args) => cut(&args),
         Command::TestCut(args) => test_cut(&args),
@@ -190,12 +201,11 @@ fn machines() -> Result<()> {
     Ok(())
 }
 
-fn devices() -> Result<()> {
+fn devices(with_bluetooth: bool) -> Result<()> {
     let found = usb::scan().context("scanning USB")?;
     let mut out = std::io::stdout().lock();
     if found.is_empty() {
         writeln!(out, "No cutting machine found on USB.")?;
-        return Ok(());
     }
     for f in found {
         let name = f.machine.map_or("unknown Graphtec device", |m| m.name);
@@ -208,6 +218,32 @@ fn devices() -> Result<()> {
             f.address,
             f.product.map(|p| format!(", reports \"{p}\"")).unwrap_or_default()
         )?;
+    }
+    if with_bluetooth {
+        bluetooth_devices(&mut out)?;
+    }
+    Ok(())
+}
+
+/// Searches over Bluetooth and says how to send to what it finds, or what to check.
+fn bluetooth_devices(out: &mut impl std::io::Write) -> Result<()> {
+    eprintln!("searching Bluetooth for about ten seconds ...");
+    let found = bluetooth::scan()?;
+    if found.is_empty() {
+        writeln!(out, "No cutting machine found over Bluetooth.")?;
+        writeln!(out, "  - Is the machine switched on and its blue Bluetooth light on (blinking)? If it is off, press the Bluetooth button.")?;
+        writeln!(out, "  - Is the machine still connected to Silhouette Studio or a phone? Close that connection first.")?;
+        writeln!(out, "  - It needs no pairing and no PIN: BladePilot connects directly.")?;
+        return Ok(());
+    }
+    for f in &found {
+        let name = f.machine.map_or("unknown machine", |m| m.name);
+        writeln!(out, "{name}  (Bluetooth {}, \"{}\")", f.address, f.name)?;
+    }
+    if let Some(f) = found.iter().find(|f| f.machine.is_some()) {
+        let id = f.machine.map_or("portrait4", |m| m.id);
+        writeln!(out, "Send to it with: bladepilot cut FILE --machine {id} --experimental-bluetooth {}", f.address)?;
+        writeln!(out, "Connecting can take up to a minute when the machine was just disconnected.")?;
     }
     Ok(())
 }
@@ -293,7 +329,8 @@ fn cut(args: &CutArgs) -> Result<()> {
     spec.grouping = if args.by_color { Grouping::ByColor } else { Grouping::Single };
     for hex in &args.pen_color {
         let color = Rgb::parse(hex).with_context(|| format!("`{hex}` is not a colour like #ff0000"))?;
-        spec.color_settings.insert(color, CutSettings { pen: true, ..spec.settings });
+        // A pen keeps the speed and passes, but not the blade's depth and force.
+        spec.color_settings.insert(color, CutSettings { pen: true, depth: None, force: args.pen_force, ..spec.settings });
     }
     let plan = bladepilot_job::plan(&design, &spec)?;
     execute(&plan, &args.output)
@@ -345,8 +382,13 @@ fn execute(plan: &Plan, output: &OutputArgs) -> Result<()> {
         return Ok(());
     }
 
+    if let Some(address) = &output.experimental_bluetooth {
+        return send_bluetooth(plan, &program, address.as_deref());
+    }
     if !output.experimental_usb {
-        bail!("cutting on a real machine is not released yet: use --dry-run or --simulate FILE.svg (or --experimental-usb on hardware test days)");
+        bail!(
+            "cutting on a real machine is still experimental: add --experimental-usb or --experimental-bluetooth (or use --dry-run or --simulate FILE.svg)"
+        );
     }
     send_usb(plan, &program)
 }
@@ -364,11 +406,36 @@ fn send_usb(plan: &Plan, program: &craft_plotter::Program) -> Result<()> {
         bail!("the connected machine ({:04x}:{:04x}) is not a {}: pass the right --machine", target.vendor_id, target.product_id, machine.name);
     }
     let transport = usb::open(target).context("opening the machine")?;
+    send(plan, program, transport)
+}
+
+fn send_bluetooth(plan: &Plan, program: &craft_plotter::Program, address: Option<&str>) -> Result<()> {
+    let machine = plan.machine;
+    let address = match address {
+        Some(a) => a.parse::<bluetooth::Address>().map_err(anyhow::Error::msg)?,
+        None => {
+            eprintln!("searching Bluetooth for the {} (about ten seconds) ...", machine.name);
+            let found = bluetooth::scan()?;
+            let hit = found.iter().find(|f| f.machine.is_some_and(|m| m.id == machine.id)).map(|f| f.address);
+            hit.with_context(|| format!("no {} found over Bluetooth: is its blue light on? (`bladepilot devices --bluetooth`)", machine.name))?
+        }
+    };
+    eprintln!("connecting over Bluetooth to {address} (up to a minute) ...");
+    let transport = bluetooth::open(address)?;
+    send(plan, program, transport)
+}
+
+/// Runs the job on a real machine and reports on the terminal.
+fn send(plan: &Plan, program: &craft_plotter::Program, transport: Box<dyn Transport + Send>) -> Result<()> {
     let mut session = Session::new(transport);
     session.init()?;
     eprintln!("connected {}", session.version().unwrap_or_else(|_| "(no version reply)".to_string()));
     // Every pass goes to holder 1: between a pen and a blade pass the tool has to be swapped.
-    let options = RunOptions { pass_starts: bladepilot_job::pass_starts(plan, program), pause_before: plan.tool_changes() };
+    let options = RunOptions {
+        pass_starts: bladepilot_job::pass_starts(plan, program),
+        pause_before: plan.tool_changes(),
+        pass_pens: plan.passes.iter().map(|p| p.settings.pen).collect(),
+    };
     let control = JobControl::new();
     session.run_with(program, &options, &control, |p| match p {
         Progress::Ready => eprintln!("ready"),
@@ -387,6 +454,10 @@ fn send_usb(plan: &Plan, program: &craft_plotter::Program) -> Result<()> {
             control.resume();
         }
         Progress::Paused { before_pass: None } => control.resume(),
+        Progress::WrongTool { before_pass } => {
+            let pen = plan.passes[before_pass].settings.pen;
+            eprint!("\nwrong tool pass {} needs the {}, but the machine reports another tool", before_pass + 1, tool_name(pen));
+        }
         Progress::Resumed => {}
         Progress::Finishing => eprintln!("\nfinishing"),
         Progress::Done => eprintln!("done"),

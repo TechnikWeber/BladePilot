@@ -1,8 +1,9 @@
 # The machine protocol, as BladePilot understands it
 
 Silhouette machines speak a dialect of Graphtec's GP-GL. This page describes it in BladePilot's
-own words; the virtual plotter is written from it. Facts come from the sources at the end.
-Everything marked *to verify* waits for the [hardware test day](HARDWARE-DAY.md).
+own words; the virtual plotter is written from it. Facts come from the sources at the end and
+from the first [hardware test day](HARDWARE-DAY.md) (2026-11-27, a Portrait 4 with firmware
+V1.05, observed over USB and Bluetooth). Everything marked *to verify* is still open.
 
 ## Connection
 
@@ -10,6 +11,32 @@ Everything marked *to verify* waits for the [hardware test day](HARDWARE-DAY.md)
   5 Alpha reports `0x3844`. Product ids are in `crates/machines`.
 - On Linux the kernel's `usblp` driver claims the machine first; a program that talks to it
   directly detaches the driver and needs write access to the device node (udev rule).
+- Portrait 4 (observed): USB 2.0 full speed, interface class 7 (printer), subclass 1, protocol 2
+  (bidirectional), bulk endpoint 0x01 out and 0x82 in with 64-byte packets, self-powered. It
+  has a serial number string but no manufacturer and no product string. Windows binds it to
+  its own USB printing support (`usbprint`); no vendor driver is involved.
+
+### Bluetooth
+
+- The Portrait 4 is dual mode. It announces itself as `Portrait 4-<serial>` (the USB serial
+  number) both over Bluetooth Classic and Bluetooth Low Energy.
+- The cutting connection is **Bluetooth Classic**: one RFCOMM service, on channel 1 (an SDP
+  search for any RFCOMM service finds it). It carries **exactly the same bytes as USB**, with
+  the same replies, and no framing of its own. Replies come back in 25–60 ms (USB: 100–160 ms).
+- Pairing: the machine has no input or output and asks for no bonding, so Secure Simple Pairing
+  runs as "Just Works" while connecting. There is no PIN, nothing to confirm and nothing stays
+  paired; no serial port is created. A program opens an RFCOMM socket and talks.
+- Closing is slow: the machine acknowledges the RFCOMM disconnect only after 15–20 s per
+  channel, and a new connection made in the meantime waits or fails. Expect up to about 40 s
+  after a disconnect before the machine accepts the next connection; keep one connection open.
+- The first reply after connecting can be a stale one from the previous session (an unread
+  answer to the last query): read and drop what is pending before the first query.
+- The blue Bluetooth light: blinking while ready, steady while connected, off when Bluetooth is
+  switched off (the Bluetooth button). The machine is not found while it is off.
+- The Low Energy side offers the standard Generic Access, Generic Attribute and Device
+  Information services and one vendor service (`e2088282-4fde-42f9-bb22-6ec3c7ed8f91`, two
+  characteristics with write and indicate, one with write only). Silhouette Studio on Windows
+  does not use it; its purpose (perhaps the mobile app) is *to verify*.
 
 ## Framing
 
@@ -30,10 +57,20 @@ Everything marked *to verify* waits for the [hardware test day](HARDWARE-DAY.md)
 | `ESC EOT` | Initialise | none |
 | `ESC ENQ` | Status | `0` ready, `1` moving, `2` no media; *to verify:* other codes |
 | `ESC NAK` | Tools in the holders (Cameo 4 generation) | Codes per holder, comma-separated |
-| `FG` ETX | Firmware version | Text such as `CAMEO 4 PRO V1.02`; *to verify:* Portrait 3/4 |
+| `FG` ETX | Firmware version | Text such as `CAMEO 4 PRO V1.02`; the Portrait 4: `Portrait 4 V1.05` and four spaces |
+| `ESC DC1` (0x11) | Identification | The same text as `FG` |
+| `ESC SYN` (0x16) | *Unknown*; Silhouette Studio polls it with the status | `   0` |
+| `TI` ETX | *Unknown* | Empty (only ETX) on the Portrait 4 |
+| `TB71` ETX, `FA` ETX | *Unknown* (offsets or calibration?) | `    0,    0`: two numbers, right-aligned in five characters |
 
 Tool codes: 0 empty, 1 ratchet blade, 2 AutoBlade, 3 deep-cut blade, 4 kraft blade, 5 rotary
 blade, 7 pen, 255 error.
+
+Observed on the Portrait 4: the status is `2` without the mat, `0` once it is loaded, `1` while
+the head moves (not while the mat is drawn in). `ESC NAK` answers ` 2, 0` with the AutoBlade and
+` 7, 0` with the sketch pen: the machine tells a pen from a blade, and reports a second, empty
+holder although it has only one. Silhouette Studio polls status, tools and `ESC SYN` about every
+half second while connected; it never sends `ESC EOT`.
 
 ## Commands
 
@@ -45,7 +82,7 @@ blade, 7 pen, 255 error.
 | `J<h>` | Select tool holder `h` (machines with two holders) |
 | `FX<f>[,<h>]` | Force |
 | `!<s>[,<h>]` | Speed |
-| `TF<d>,<h>` | Blade depth for a blade the machine sets itself |
+| `TF<d>,<h>` | Blade depth for a blade the machine sets itself. The Portrait 4 then moves the head to its setting point and turns the AutoBlade (status `1` for about 3 s); it skips that when the depth is already set |
 | `FC<x>[,<y>,<h>]` | Blade swivel offset in device units |
 | `FE<n>,<h>` | Lift the tool between segments when `n` is 1 |
 | `FF<s>,<e>,<h>` | Corner handling range in tenths of a mm |
@@ -58,6 +95,9 @@ blade, 7 pen, 255 error.
 | `L0` | Pen-up marker between sections |
 | `SO0` | Park, used after the last move |
 | `H` | Home |
+| `BZ1,<d0>,<r0>,<d1>,<r1>,<d2>,<r2>,<d3>,<r3>,0` | A cubic Bézier curve with the tool down: start, two control points, end. Silhouette Studio sends circles as four of them; the Portrait 4 cuts them |
+| `TR0,1` … `TR0,0` | Silhouette Studio sends these around every job; *meaning unknown* |
+| `BE1…`, `BE2…` | Binary records Silhouette Studio uses for straight segments; *format unknown*, not needed: `D` works |
 
 ## Generations
 
@@ -67,6 +107,18 @@ blade, 7 pen, 255 error.
 | Cameo 3 | Cameo 3 | Commands carry the holder; mat select; blade depth |
 | Cameo 4 | Cameo 4 and 5, Portrait 3 and 4 | Force and blade offset are sent twice; no `J` on one-holder machines |
 
+The holder argument on the Portrait 4 (one holder): it acts on BladePilot's `FX<f>,1`, `!<s>,1`,
+`TF<d>,1` and `FC<x>,1,1` (force, speed and depth all measurably took effect). Silhouette Studio
+writes the same machine as `FX<f>,TJ<a>` (force and acceleration in one record), `!<s>` and
+`FC<x>` without a holder, `FE0,0` and `FF…,0` with holder 0, and `TF<d>,1`.
+
+What Silhouette Studio sends around a job on the Portrait 4: mat (`TG11` for the 8.5 × 12 in
+mat), `FN0`, `TB50,0`, `TR0,1`, then the cutting area of the page with a 1.5 mm margin
+(`\30,30`, `Z` = page size minus 30 units), the tool settings, the paths, and at the end `L0`,
+`\0,0`, `M0,0`, `TR0,0`, `FN0`, `TB50,0`. After `TF` it waits until the status is `0` before it
+sends the paths; BladePilot sends everything at once, and the machine keeps the paths until the
+blade is set.
+
 ## Registration marks (print and cut)
 
 `TB99` starts the set-up, `TB52,2` selects the mark type, `TB51,400` the mark length (20 mm),
@@ -75,16 +127,19 @@ searches for three marks (`TB124` for four) around the expected position, or `TB
 positions manually. The sender waits until the status reads ready before it sends the cut.
 *To verify:* the reply when the marks are not found.
 
-## Open questions for the hardware test day
+## Open questions
 
 - Status codes besides 0, 1 and 2; the reply when the registration marks are not found.
-- The exact version strings of the Portrait 3 and 4, and whether both answer `ESC NAK`.
+- The Portrait 3's version string and tool reply.
 - Force and speed ranges of the Portrait 3 and 4.
-- How much the machine buffers and how it signals that it is full.
-- What Silhouette Studio sends that BladePilot does not, for the same job, and for its test
-  cut.
-- What the machine offers over Bluetooth (a Classic serial port, BLE services), and whether it
-  speaks the same GP-GL there.
+- How much the machine buffers and how it signals that it is full; what stops a running job
+  (a job sent in one piece keeps running when the sender stops sending).
+- The meaning of `TR`, `TI`, `TB71`, `FA` and `ESC SYN`, and the `BE` records.
+- What the Low Energy vendor service is for.
+
+Answered on the first test day: the Portrait 4's version string and tool reply, what Silhouette
+Studio sends for the same job (above), and what the machine offers over Bluetooth (the same
+GP-GL over RFCOMM).
 
 ## Sources
 

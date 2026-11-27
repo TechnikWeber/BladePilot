@@ -141,6 +141,14 @@ pub fn by_usb(vendor_id: u16, product_id: u16) -> Option<&'static Machine> {
     MACHINES.iter().find(|m| m.vendor_id == vendor_id && m.product_id == product_id)
 }
 
+/// Finds the machine behind a Bluetooth device name. The Portrait 4 calls itself
+/// `Portrait 4-647221A`: the model, a dash and its serial number.
+pub fn by_bluetooth_name(name: &str) -> Option<&'static Machine> {
+    let model = name.rsplit_once('-').map_or(name, |(model, _)| model);
+    let wanted = normalise(model);
+    MACHINES.iter().find(|m| normalise(m.name.strip_prefix("Silhouette ").unwrap_or(m.name)) == wanted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +179,9 @@ mod tests {
         assert_eq!(by_usb(VID_GRAPHTEC, 0x113f).map(|m| m.id), Some("portrait4"));
         assert!(by_id("plotter9000").is_none());
         assert!(by_usb(0x1234, 0x113a).is_none());
+        assert_eq!(by_bluetooth_name("Portrait 4-647221A").map(|m| m.id), Some("portrait4"));
+        assert_eq!(by_bluetooth_name("Cameo 4 Pro-12AB").map(|m| m.id), Some("cameo4pro"));
+        assert!(by_bluetooth_name("[AV] Samsung Soundbar Q800A").is_none());
     }
 
     #[test]

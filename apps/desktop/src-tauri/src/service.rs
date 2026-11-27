@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use bladepilot_design::kurbo::{Affine, BezPath, PathEl};
 use bladepilot_design::{Design, Polyline, Rgb, flatten};
-use bladepilot_device::{JobControl, Progress, RunOptions, Session, SimTransport, Transport, usb};
+use bladepilot_device::{JobControl, Progress, RunOptions, Session, SimTransport, Transport, bluetooth, usb};
 use bladepilot_job::{CutSettings, Grouping, JobSpec, PassOrder, Plan};
 use bladepilot_machines::{Machine, Support};
 use bladepilot_sim::{Config, VirtualPlotter};
@@ -42,6 +42,19 @@ pub struct Service {
     test_id: Mutex<Option<u32>>,
     /// Pace of the virtual plotter for sent jobs, `None` for as fast as it goes.
     pub virtual_pace: Option<(f64, f64)>,
+    /// The open Bluetooth connection, kept between status queries and jobs: after a disconnect
+    /// the machine takes up to about 40 s before it accepts the next one.
+    bluetooth: Mutex<BluetoothLink>,
+}
+
+/// A Bluetooth connection to keep, with the address it goes to.
+#[derive(Default)]
+struct BluetoothLink(Option<(bluetooth::Address, Box<dyn Transport + Send>)>);
+
+impl std::fmt::Debug for BluetoothLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("BluetoothLink").field(&self.0.as_ref().map(|(a, _)| a.to_string())).finish()
+    }
 }
 
 impl Default for Service {
@@ -52,6 +65,7 @@ impl Default for Service {
             job: Mutex::default(),
             test_id: Mutex::default(),
             virtual_pace: Some(VIRTUAL_PACE_MM_S),
+            bluetooth: Mutex::default(),
         }
     }
 }
@@ -387,7 +401,11 @@ impl Service {
         }
         let plan = bladepilot_job::plan(&design, &spec)?;
         let program = bladepilot_job::encode(&plan)?;
-        let options = RunOptions { pass_starts: bladepilot_job::pass_starts(&plan, &program), pause_before: pauses(&plan, job)? };
+        let options = RunOptions {
+            pass_starts: bladepilot_job::pass_starts(&plan, &program),
+            pause_before: pauses(&plan, job)?,
+            pass_pens: plan.passes.iter().map(|p| p.settings.pen).collect(),
+        };
         Ok(Prepared { plan, program, options })
     }
 
@@ -455,7 +473,10 @@ impl Service {
                     None => Session::instant(Box::new(SimTransport::new(plotter)) as Box<dyn Transport + Send>),
                 };
                 session.poll_interval = session.poll_interval.min(Duration::from_millis(50));
-                drive(&mut session, p, control, emit)
+                // The paced virtual plotter has done its moves when a write returns.
+                session.settle = Duration::ZERO;
+                // The virtual plotter always reports an AutoBlade: no tool check.
+                drive(&mut session, p, control, emit, false)
             }
             Target::Usb { bus, address } => {
                 let found = find_device(bus, *address)?;
@@ -467,9 +488,42 @@ impl Service {
                     ));
                 }
                 let mut session = Session::new(usb::open(&found)?);
-                drive(&mut session, p, control, emit)
+                drive(&mut session, p, control, emit, true)
+            }
+            Target::Bluetooth { address } => {
+                let address = parse_address(address)?;
+                let mut session = Session::new(self.bluetooth_link(address)?);
+                let result = drive(&mut session, p, control, emit, true);
+                self.keep_bluetooth(address, session.into_transport(), &result);
+                result
             }
         }
+    }
+
+    /// The kept Bluetooth connection to `address`, or a new one.
+    fn bluetooth_link(&self, address: bluetooth::Address) -> Result<Box<dyn Transport + Send>, ApiError> {
+        let kept = lock(&self.bluetooth).0.take();
+        match kept {
+            Some((a, transport)) if a == address => Ok(transport),
+            _ => Ok(bluetooth::open(address)?),
+        }
+    }
+
+    /// Keeps a Bluetooth connection for the next query or job, unless it broke.
+    fn keep_bluetooth<T>(&self, address: bluetooth::Address, transport: Box<dyn Transport + Send>, result: &Result<T, ApiError>) {
+        let broken = matches!(result, Err(e) if e.code == "bluetooth" || e.code == "noReply");
+        if !broken {
+            lock(&self.bluetooth).0 = Some((address, transport));
+        }
+    }
+
+    /// Asks a machine over Bluetooth how it is, on the kept connection.
+    pub fn bluetooth_status(&self, address: &str) -> Result<DeviceStatus, ApiError> {
+        let address = parse_address(address)?;
+        let mut session = Session::new(self.bluetooth_link(address)?);
+        let result = query(&mut session);
+        self.keep_bluetooth(address, session.into_transport(), &result);
+        result
     }
 
     /// Pauses, resumes or stops the running job; nothing happens when none runs.
@@ -490,16 +544,28 @@ impl Service {
 }
 
 /// Runs a prepared job in a session and reports every step.
-fn drive<T: Transport>(session: &mut Session<T>, p: &Prepared, control: &JobControl, emit: &mut impl FnMut(JobEvent)) -> Result<(), ApiError> {
+fn drive<T: Transport>(
+    session: &mut Session<T>,
+    p: &Prepared,
+    control: &JobControl,
+    emit: &mut impl FnMut(JobEvent),
+    check_tools: bool,
+) -> Result<(), ApiError> {
+    let mut options = p.options.clone();
+    if !check_tools {
+        options.pass_pens.clear();
+    }
     session.init()?;
     emit(JobEvent::Connected { version: session.version().ok() });
-    session.run_with(&p.program, &p.options, control, |progress| {
+    session.run_with(&p.program, &options, control, |progress| {
         emit(match progress {
             Progress::Ready => JobEvent::Ready,
             Progress::Pass { index } => JobEvent::Pass { index },
             Progress::Sending { sent, total } => JobEvent::Sending { sent, total },
             Progress::SearchingMarks => JobEvent::SearchingMarks,
             Progress::Paused { before_pass } => JobEvent::Paused { before_pass },
+            // The pause that follows asks for the right tool.
+            Progress::WrongTool { .. } => return,
             Progress::Resumed => JobEvent::Resumed,
             Progress::Finishing => JobEvent::Finishing,
             // The thread reports the end once the job slot is free again.
@@ -570,8 +636,30 @@ pub fn scan_devices() -> Result<Vec<DeviceInfo>, ApiError> {
             serial: f.serial,
             bus: f.bus,
             address: f.address,
+            bluetooth: None,
         })
         .collect())
+}
+
+/// The cutting machines in Bluetooth range (about ten seconds).
+pub fn scan_bluetooth() -> Result<Vec<DeviceInfo>, ApiError> {
+    Ok(bluetooth::scan()?
+        .into_iter()
+        .map(|f| DeviceInfo {
+            machine: f.machine.map(|m| m.id.to_string()),
+            name: f.machine.map_or_else(|| f.name.clone(), |m| m.name.to_string()),
+            vendor_id: f.machine.map_or(0, |m| m.vendor_id),
+            product_id: f.machine.map_or(0, |m| m.product_id),
+            serial: f.name.rsplit_once('-').map(|(_, serial)| serial.to_string()),
+            bus: "bluetooth".to_string(),
+            address: 0,
+            bluetooth: Some(f.address.to_string()),
+        })
+        .collect())
+}
+
+fn parse_address(address: &str) -> Result<bluetooth::Address, ApiError> {
+    address.parse().map_err(|e: String| ApiError::new("bluetooth", e))
 }
 
 fn find_device(bus: &str, address: u8) -> Result<usb::Found, ApiError> {

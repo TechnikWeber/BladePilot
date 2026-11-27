@@ -68,7 +68,7 @@ fn a_pen_and_a_blade_pass_pause_for_the_tool_change_and_still_cut_the_plan() {
     let plan = plan(&fixture("nested.svg"), &spec).unwrap();
     assert_eq!(plan.tool_changes(), vec![1], "the pen pass comes first, then the blade");
     let program = encode(&plan).unwrap();
-    let options = RunOptions { pass_starts: bladepilot_job::pass_starts(&plan, &program), pause_before: plan.tool_changes() };
+    let options = RunOptions { pass_starts: bladepilot_job::pass_starts(&plan, &program), pause_before: plan.tool_changes(), pass_pens: vec![] };
     let control = JobControl::new();
     let mut session = Session::instant(SimTransport::new(VirtualPlotter::new(Config::new(plan.machine))));
     let mut passes = Vec::new();

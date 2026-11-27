@@ -63,13 +63,18 @@
 
   <span class="label conn-label">{t('machine.connection')}</span>
   <div class="conn">
-    <span class="conn-icon"><Icon name={found ? 'usb' : 'virtual'} size={16} /></span>
+    <span class="conn-icon"><Icon name={found?.bluetooth ? 'bluetooth' : found ? 'usb' : 'virtual'} size={16} /></span>
     <select class="select" bind:value={app.target}>
       <option value="virtual">{t('machine.virtual')}</option>
-      {#each app.devices as d (deviceKey(d))}<option value={deviceKey(d)}>{d.name} · USB {d.bus}:{d.address}</option>{/each}
+      {#each app.devices as d (deviceKey(d))}
+        <option value={deviceKey(d)}>{d.name} · {d.bluetooth ? `Bluetooth ${d.serial ?? d.bluetooth}` : `USB ${d.bus}:${d.address}`}</option>
+      {/each}
     </select>
     <button class="icon-btn" title={t('machine.search')} disabled={app.scanning} onclick={() => app.scan()}>
       <Icon name="refresh" class={app.scanning ? 'spin' : ''} />
+    </button>
+    <button class="icon-btn" title={t('machine.searchBluetooth')} disabled={app.scanningBluetooth} onclick={() => app.scanBluetooth()}>
+      <Icon name="bluetooth" class={app.scanningBluetooth ? 'pulse' : ''} />
     </button>
   </div>
   <div class="status">
@@ -81,6 +86,11 @@
   </div>
   {#if mismatch}
     <div class="note warn"><Icon name="info" size={15} />{t('machine.otherModel', { found: mismatch.name })}</div>
+  {/if}
+  {#if app.scanningBluetooth}
+    <div class="note"><Icon name="bluetooth" size={15} />{t('machine.bluetoothSearching')}</div>
+  {:else if found?.bluetooth}
+    <div class="note"><Icon name="bluetooth" size={15} />{t('machine.bluetoothHint')}</div>
   {/if}
   {#if found}
     <div class="note warn"><Icon name="alert" size={15} />{t('machine.experimental')}</div>
@@ -198,6 +208,15 @@
     border-radius: var(--radius-sm);
     font-size: 12px;
     line-height: 1.35;
+  }
+
+  .note:not(.warn) {
+    background: var(--accent-soft);
+    color: var(--text-2);
+  }
+
+  :global(.pulse) {
+    animation: pulse 1s ease-in-out infinite;
   }
 
   .note.warn {

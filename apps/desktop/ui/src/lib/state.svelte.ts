@@ -189,6 +189,7 @@ class AppState {
   statusError = $state<ApiError | null>(null);
   checking = $state(false);
   scanning = $state(false);
+  scanningBluetooth = $state(false);
   understood = $state(false);
 
   view = $state<View>({ scale: 2, x: 40, y: 40 });
@@ -600,13 +601,29 @@ class AppState {
   async scan(): Promise<void> {
     this.scanning = true;
     try {
-      this.devices = await backend.scanDevices();
+      const usb = await backend.scanDevices();
+      this.devices = [...usb, ...this.devices.filter((d) => d.bluetooth)];
       if (this.target !== 'virtual' && !this.devices.some((d) => deviceKey(d) === this.target)) this.target = 'virtual';
     } catch (e) {
-      this.devices = [];
+      this.devices = this.devices.filter((d) => d.bluetooth);
       if (!backend.mock) this.toast(errorText(e));
     } finally {
       this.scanning = false;
+    }
+  }
+
+  /** The connection assistant for Bluetooth: searches, lists what it finds, picks a single machine. */
+  async scanBluetooth(): Promise<void> {
+    this.scanningBluetooth = true;
+    try {
+      const found = await backend.scanBluetooth();
+      this.devices = [...this.devices.filter((d) => !d.bluetooth), ...found];
+      if (found.length === 0) this.toast(t('machine.bluetoothNone'));
+      else if (this.target === 'virtual' && found.length === 1) this.target = deviceKey(found[0]);
+    } catch (e) {
+      this.toast(errorText(e));
+    } finally {
+      this.scanningBluetooth = false;
     }
   }
 
@@ -617,7 +634,11 @@ class AppState {
     this.statusError = null;
     try {
       const device = this.device;
-      this.status = device ? await backend.deviceStatus(device.bus, device.address) : await backend.virtualStatus(this.machineId);
+      this.status = device?.bluetooth
+        ? await backend.bluetoothStatus(device.bluetooth)
+        : device
+          ? await backend.deviceStatus(device.bus, device.address)
+          : await backend.virtualStatus(this.machineId);
     } catch (e) {
       this.status = null;
       this.statusError = e as ApiError;
@@ -628,6 +649,7 @@ class AppState {
 
   targetValue(): Target {
     const device = this.device;
+    if (device?.bluetooth) return { kind: 'bluetooth', address: device.bluetooth };
     return device ? { kind: 'usb', bus: device.bus, address: device.address } : { kind: 'virtual' };
   }
 
@@ -813,7 +835,7 @@ class AppState {
 }
 
 export function deviceKey(d: DeviceInfo): string {
-  return `usb:${d.bus}:${d.address}`;
+  return d.bluetooth ? `bt:${d.bluetooth}` : `usb:${d.bus}:${d.address}`;
 }
 
 export const app = new AppState();

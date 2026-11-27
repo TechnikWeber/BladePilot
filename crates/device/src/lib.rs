@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 use bladepilot_sim::VirtualPlotter;
 use craft_plotter::gpgl::silhouette::{self, Status, Tool};
+
+pub mod bluetooth;
 use craft_plotter::{Command, Program};
 
 pub mod usb;
@@ -26,6 +28,8 @@ const CHUNK: usize = 4096;
 pub enum Error {
     #[error("USB: {0}")]
     Usb(String),
+    #[error("Bluetooth: {0}")]
+    Bluetooth(String),
     #[error("the machine did not answer")]
     NoReply,
     #[error("no material loaded: load the mat or the material and start again")]
@@ -103,6 +107,13 @@ pub enum Progress {
     Paused {
         before_pass: Option<usize>,
     },
+    /// The machine reports the wrong kind of tool for pass `before_pass` (a pen for a blade pass
+    /// or the other way round, or an empty holder). A [`Progress::Paused`] follows: once the job is
+    /// resumed it goes on without asking again, so a tool the machine does not recognise cannot
+    /// block it.
+    WrongTool {
+        before_pass: usize,
+    },
     /// The job goes on after a pause.
     Resumed,
     /// Everything is sent; the machine finishes the cut.
@@ -119,6 +130,10 @@ pub struct RunOptions {
     /// Passes before which the job pauses with the tool lifted, so the tool can be swapped
     /// (`bladepilot_job::Plan::tool_changes`). The first pass never pauses.
     pub pause_before: Vec<usize>,
+    /// Per pass: does it want a pen (`true`) or a blade? When given, the tool in holder 1 is
+    /// checked before the first pass and after every tool change. Leave it empty for the virtual
+    /// plotter, which always reports an AutoBlade.
+    pub pass_pens: Vec<bool>,
 }
 
 const RUNNING: u8 = 0;
@@ -186,7 +201,11 @@ pub struct Session<T: Transport> {
     pub marks_timeout: Duration,
     /// How long the machine may take to finish after the last byte.
     pub finish_timeout: Duration,
-    /// Bytes that arrived after the first ETX of a reply, kept for the next query.
+    /// After sending, how long a machine that never reported moving must stay ready before the
+    /// job counts as done. Right after a write it may still answer "ready" before it starts:
+    /// over Bluetooth replies come back within 20 ms.
+    pub settle: Duration,
+    /// Bytes that arrived after the first ETX of a reply; dropped before the next query.
     spare: Vec<u8>,
 }
 
@@ -198,13 +217,14 @@ impl<T: Transport> Session<T> {
             reply_timeout: Duration::from_secs(3),
             marks_timeout: Duration::from_secs(120),
             finish_timeout: Duration::from_secs(60 * 60),
+            settle: Duration::from_secs(3),
             spare: Vec::new(),
         }
     }
 
     /// A session that never sleeps, for the virtual plotter.
     pub fn instant(transport: T) -> Session<T> {
-        Session { poll_interval: Duration::ZERO, ..Session::new(transport) }
+        Session { poll_interval: Duration::ZERO, settle: Duration::ZERO, ..Session::new(transport) }
     }
 
     pub fn transport(&self) -> &T {
@@ -220,11 +240,30 @@ impl<T: Transport> Session<T> {
         self.transport.write_all(silhouette::INIT.as_bytes())
     }
 
-    /// Writes a query and returns its reply up to and including the first ETX.
+    /// Writes a query and returns its reply up to and including the first ETX. Without a reply
+    /// it asks once more: queries change nothing, and over Bluetooth a reply can get stuck right
+    /// after connecting.
     fn query(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
+        match self.query_once(bytes) {
+            Err(Error::NoReply) if !self.poll_interval.is_zero() => self.query_once(bytes),
+            other => other,
+        }
+    }
+
+    fn query_once(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
+        // The machine only speaks when asked: whatever is still waiting is a late answer to an
+        // earlier query and would shift every reply after it.
+        self.spare.clear();
+        if !self.poll_interval.is_zero() {
+            for _ in 0..8 {
+                if self.transport.read(Duration::from_millis(1))?.is_empty() {
+                    break;
+                }
+            }
+        }
         self.transport.write_all(bytes)?;
         let deadline = Instant::now() + self.reply_timeout;
-        let mut reply = std::mem::take(&mut self.spare);
+        let mut reply = Vec::new();
         loop {
             if let Some(end) = reply.iter().position(|b| *b == ETX) {
                 self.spare = reply.split_off(end + 1);
@@ -272,6 +311,26 @@ impl<T: Transport> Session<T> {
         }
     }
 
+    /// Waits until the machine has done what it was sent: a ready status counts once the machine
+    /// was seen moving, or after [`Session::settle`] without moving.
+    fn wait_done(&mut self) -> Result<(), Error> {
+        let start = Instant::now();
+        let mut moved = false;
+        loop {
+            match self.status()? {
+                Status::Moving => moved = true,
+                Status::Ready if moved || start.elapsed() >= self.settle => return Ok(()),
+                Status::Ready => {}
+                Status::Unloaded => return Err(Error::NoMedia),
+                Status::Unknown(byte) => return Err(Error::UnknownStatus(byte)),
+            }
+            if start.elapsed() >= self.finish_timeout {
+                return Err(Error::Timeout);
+            }
+            std::thread::sleep(self.poll_interval);
+        }
+    }
+
     /// Runs a whole program: initialise, wait until ready, send, wait for the marks when the job
     /// has registration, send the rest, wait until the machine is done.
     pub fn run(&mut self, program: &Program, progress: impl FnMut(Progress)) -> Result<(), Error> {
@@ -290,6 +349,9 @@ impl<T: Transport> Session<T> {
         self.init()?;
         self.wait_ready(self.reply_timeout)?;
         progress(Progress::Ready);
+        if let Some(&pen) = options.pass_pens.first() {
+            self.check_tool(pen, 0, control, &mut progress)?;
+        }
         let mut run = Streaming { options, control, sent: 0, total: program.to_stream().len(), tool_down_at: None };
         let (before, after) = program.split_at_registration();
         let streamed = (|| {
@@ -313,7 +375,7 @@ impl<T: Transport> Session<T> {
             other => other?,
         }
         progress(Progress::Finishing);
-        self.wait_ready(self.finish_timeout)?;
+        self.wait_done()?;
         progress(Progress::Done);
         Ok(())
     }
@@ -332,6 +394,9 @@ impl<T: Transport> Session<T> {
                     }
                     run.control.pause();
                     self.hold(run.control, progress, Some(pass))?;
+                    if let Some(&pen) = run.options.pass_pens.get(pass) {
+                        self.check_tool(pen, pass, run.control, progress)?;
+                    }
                 }
                 progress(Progress::Pass { index: pass });
             }
@@ -374,9 +439,29 @@ impl<T: Transport> Session<T> {
         Ok(())
     }
 
+    /// Asks which tool sits in holder 1 and, when it is the wrong kind for the pass, pauses until
+    /// the job is resumed. No reply, or a tool code BladePilot does not know, lets the job go on.
+    fn check_tool(&mut self, pen: bool, pass: usize, control: &JobControl, progress: &mut impl FnMut(Progress)) -> Result<(), Error> {
+        let Ok(tools) = self.tools() else {
+            return Ok(());
+        };
+        let right = match tools.first() {
+            Some(Some(Tool::Pen)) => pen,
+            Some(Some(Tool::Empty)) => false,
+            Some(Some(Tool::Error) | None) | None => true,
+            Some(Some(_)) => !pen,
+        };
+        if !right {
+            progress(Progress::WrongTool { before_pass: pass });
+            control.pause();
+            self.hold(control, progress, Some(pass))?;
+        }
+        Ok(())
+    }
+
     /// Waits until the machine has done what it got, then until the job is resumed or stopped.
     fn hold(&mut self, control: &JobControl, progress: &mut impl FnMut(Progress), before_pass: Option<usize>) -> Result<(), Error> {
-        self.wait_ready(self.finish_timeout)?;
+        self.wait_done()?;
         progress(Progress::Paused { before_pass });
         let nap = self.poll_interval.max(Duration::from_millis(10));
         loop {
@@ -399,7 +484,7 @@ impl<T: Transport> Session<T> {
         if !tail.is_empty() {
             self.transport.write_all(&craft_plotter::delimit(tail))?;
         }
-        self.wait_ready(self.finish_timeout)
+        self.wait_done()
     }
 }
 
@@ -489,7 +574,7 @@ mod tests {
         let blade = Operation { holder: 1, paths: vec![square(50.0)], ..Operation::default() };
         let second = silhouette::setup(&setup, &pen, true).len() + 5;
         let program = silhouette::encode(&setup, &Job { operations: vec![pen, blade], ..Job::default() }).unwrap();
-        (program, RunOptions { pass_starts: vec![0, second], pause_before: vec![1] })
+        (program, RunOptions { pass_starts: vec![0, second], pause_before: vec![1], pass_pens: vec![] })
     }
 
     #[test]

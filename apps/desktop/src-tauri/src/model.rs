@@ -235,6 +235,9 @@ pub struct DeviceInfo {
     pub serial: Option<String>,
     pub bus: String,
     pub address: u8,
+    /// The Bluetooth address (`00:1B:41:CE:BB:CB`) of a machine found over Bluetooth; `None` on USB.
+    #[serde(default)]
+    pub bluetooth: Option<String>,
 }
 
 /// What a machine says about itself.
@@ -256,6 +259,8 @@ pub enum Target {
     Virtual,
     /// A machine on USB, as [`DeviceInfo`] found it.
     Usb { bus: String, address: u8 },
+    /// A machine over Bluetooth, by its address.
+    Bluetooth { address: String },
 }
 
 /// What a running job reports.
@@ -337,6 +342,7 @@ impl From<bladepilot_device::Error> for ApiError {
         use bladepilot_device::Error as E;
         let code = match &e {
             E::Usb(_) => "usb",
+            E::Bluetooth(_) => "bluetooth",
             E::NoReply => "noReply",
             E::NoMedia => "noMedia",
             E::MarksNotFound => "marksNotFound",

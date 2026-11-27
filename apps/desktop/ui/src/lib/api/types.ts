@@ -136,6 +136,8 @@ export interface DeviceInfo {
   serial: string | null;
   bus: string;
   address: number;
+  /** Bluetooth address (`00:1B:41:CE:BB:CB`) of a machine found over Bluetooth; null on USB. */
+  bluetooth: string | null;
 }
 
 export interface DeviceStatus {
@@ -144,7 +146,7 @@ export interface DeviceStatus {
   tools: string[];
 }
 
-export type Target = { kind: 'virtual' } | { kind: 'usb'; bus: string; address: number };
+export type Target = { kind: 'virtual' } | { kind: 'usb'; bus: string; address: number } | { kind: 'bluetooth'; address: string };
 
 export interface ApiError {
   code: string;
@@ -186,6 +188,9 @@ export interface Backend {
   simulateJob(job: JobRequest): Promise<Simulation>;
   scanDevices(): Promise<DeviceInfo[]>;
   deviceStatus(bus: string, address: number): Promise<DeviceStatus>;
+  /** Machines in Bluetooth range; takes about ten seconds. */
+  scanBluetooth(): Promise<DeviceInfo[]>;
+  bluetoothStatus(address: string): Promise<DeviceStatus>;
   virtualStatus(machine: string): Promise<DeviceStatus>;
   startJob(job: JobRequest, target: Target, onEvent: (e: JobEvent) => void): Promise<void>;
   controlJob(action: JobAction): Promise<void>;

@@ -88,6 +88,12 @@ export const mockBackend: Backend = {
   async deviceStatus() {
     throw { code: 'usb', message: 'no USB in the browser demo' };
   },
+  async scanBluetooth() {
+    return [];
+  },
+  async bluetoothStatus() {
+    throw { code: 'bluetooth', message: 'no Bluetooth in the browser demo' };
+  },
   async virtualStatus(machine) {
     const m = machines.find((x) => x.id === machine);
     const name = (m?.name ?? machine).replace(/^Silhouette /, '').toUpperCase();

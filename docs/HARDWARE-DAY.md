@@ -9,6 +9,26 @@ Everything happens on one Windows PC: Studio and BladePilot use the machine in t
 same Windows driver, Wireshark's USBPcap captures both, and Claude Code can run the whole session
 from a clone of this repository.
 
+## Results of the first test day (2026-11-27)
+
+A Portrait 4, firmware V1.05, Silhouette Studio 5.0.556, BladePilot 0.3.0, on Windows 11.
+
+- **T0 to T3 done; BladePilot works over USB.** The pen square lands on Studio's, the AutoBlade
+  cuts copy paper cleanly, circles and the inside-first order are right. BladePilot's depth,
+  force and speed all take effect (depth 2 → the machine sets the AutoBlade; force 1 and speed
+  1 → a slow, barely-through cut). Depth 2, force 15, speed 10 cuts copy paper without scoring
+  the mat's film; Studio's profile (depth 3) scores it.
+- Found and fixed afterwards: a pen pass of a two-colour job inherited the blade's depth and
+  force, so the machine would have run its AutoBlade setting with the pen in the holder.
+- **Bluetooth works**: the same bytes over Bluetooth Classic (RFCOMM channel 1), no pairing, no
+  PIN. BladePilot 0.4 sends over Bluetooth on Windows and Linux.
+- T4 (tool change), T5 (print and cut), T6 (cancel), T7 (desktop app), T8 (Studio's test cut):
+  not done; the tool change and stopping are built to the best of what is known.
+- All facts are in [PROTOCOL.md](PROTOCOL.md).
+
+Next time: T4, T6 and T7 with the desktop app (USB and Bluetooth), a long job to see how much
+the machine buffers, and how Studio stops a running job.
+
 ## Bring
 
 - The machine (Portrait 3 or 4), its USB cable, a mat, plain paper, light card
@@ -21,7 +41,11 @@ from a clone of this repository.
    now and not in the middle of a test. Note Studio's version and the firmware version it shows;
    they also settle whether the machine is a Portrait 3 or 4.
 2. Install [Wireshark](https://www.wireshark.org/download.html) and tick **USBPcap** in the
-   installer. Restart Windows.
+   installer. The MSI package (what `winget install WiresharkFoundation.Wireshark` installs)
+   has no USBPcap: then install it on its own (`winget install desowin.USBPcap`) and copy
+   `C:\Program Files\USBPcap\USBPcapCMD.exe` into `C:\Program Files\Wireshark\extcap\`.
+   Plug in a USB Bluetooth adapter now if you want to capture Bluetooth: USBPcap only sees
+   devices that were there at start-up. Restart Windows.
 3. Install [Git for Windows](https://git-scm.com/download/win) and Claude Code.
 4. Clone the repository and fetch the Windows build of BladePilot into the git-ignored `re`
    folder:
@@ -76,25 +100,41 @@ Add `--machine portrait4` for a Portrait 4, and `--experimental-usb` to send to 
 Close Silhouette Studio's connection (or Studio itself) before BladePilot sends, and the other
 way round: only one program can talk to the machine at a time.
 
-## Bluetooth (optional, no capture)
+## Bluetooth
 
-Portrait 2 and newer have Bluetooth. Note for [PROTOCOL.md](PROTOCOL.md) what the machine
-offers:
+Answered on the first test day: the machine speaks the same GP-GL over Bluetooth Classic
+(RFCOMM channel 1) and needs no pairing. To try BladePilot over Bluetooth, unplug the USB cable,
+make sure the machine's blue Bluetooth light blinks (press the Bluetooth button if it is off)
+and close Silhouette Studio, which holds the connection while it runs:
 
-1. Windows: **Settings → Bluetooth & devices → Add device → Bluetooth**. Note the name the
-   machine shows up with and whether pairing asks for a PIN.
-2. After pairing, open **Device Manager → Ports (COM & LPT)**: a "Standard Serial over
-   Bluetooth link" port means Bluetooth Classic with a serial profile. Note the COM number.
-3. Note whether Silhouette Studio offers the machine over Bluetooth, and whether a job runs
-   that way.
+```powershell
+re\bin\bladepilot.exe devices --bluetooth
+re\bin\bladepilot.exe cut hardware-tests\T1-square.svg --pen --machine portrait4 --experimental-bluetooth
+```
 
-On the Linux laptop the same with `bluetoothctl`: `scan on`, note the address, then
-`info ADDRESS` lists the services (UUIDs) the machine advertises.
+Without an address `--experimental-bluetooth` searches for the machine first. Connecting can
+take up to a minute right after another program was connected.
+
+To capture Bluetooth, the adapter must be a USB one that was plugged in before Windows started
+(see the preparation): then USBPcap captures the adapter like any USB device, and Wireshark
+decodes the Bluetooth traffic in it (HCI, L2CAP, RFCOMM).
 
 ## Capturing
 
-List the capture interfaces and capture on all USBPcap hubs at once; `bladepilot replay` finds
-the machine among the devices by the way it talks:
+Capture the machine alone when a keyboard or mouse shares its USB hub: otherwise every keystroke
+ends up in the file, and a gaming mouse (8000 reports a second) can flood the capture buffer.
+`USBPcapCMD.exe --extcap-interface \\.\USBPcap1 --extcap-config` lists the devices of a hub
+with their addresses (the machine is the "USB printing support" entry); then capture only it:
+
+```powershell
+& "C:\Program Files\USBPcap\USBPcapCMD.exe" -d \\.\USBPcap2 --devices 10 --capture-from-new-devices --inject-descriptors -o re\captures\T1-studio.pcap
+```
+
+Stop it by closing its window (or ending the process): it writes every block straight to the
+file, so nothing is lost. `bladepilot replay` reads these `.pcap` files like Wireshark's.
+
+Otherwise list the capture interfaces and capture on all USBPcap hubs at once; `bladepilot
+replay` finds the machine among the devices by the way it talks:
 
 ```powershell
 & "C:\Program Files\Wireshark\tshark.exe" -D

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0 – 2026-11-27
+
+After the first hardware test day with a Portrait 4: sending over USB works, and Bluetooth is new.
+Sending to a machine is still marked experimental.
+
+- **Bluetooth** on Windows and Linux: the machine speaks the same protocol over Bluetooth
+  Classic and needs no pairing. `bladepilot devices --bluetooth` searches and prints the command
+  to use; `--experimental-bluetooth [ADDRESS]` sends (without an address it searches first). The
+  desktop app has a Bluetooth search next to the USB one and keeps one connection open for status
+  and jobs, because the machine takes up to about 40 s after a disconnect before it accepts the
+  next one.
+- **Tool check:** before the first pass and after a tool change BladePilot asks the machine which
+  tool is in the holder and waits once when a pen pass finds a blade or the other way round.
+- **Fixed:** a pen pass of a two-colour job sent the blade's depth and force; the machine would
+  have run its AutoBlade setting with the pen in the holder. Pens never get a depth now, and
+  `--pen-force` sets their force (default: the machine's own).
+- **Fixed:** a job counted as done when the machine answered "ready" before it had started (over
+  Bluetooth replies come back within 20 ms), and the connection was closed too early.
+- Late replies are dropped before each query, and a query without a reply is asked once more.
+- [PROTOCOL.md](docs/PROTOCOL.md) has what the Portrait 4 answered and what Silhouette Studio
+  sends; [HARDWARE-DAY.md](docs/HARDWARE-DAY.md) the results and how to capture the machine alone.
+
 ## 0.3.0 – 2026-11-27
 
 - **Test cut:** a 12 mm square with a triangle inside, cut with one pass's settings to try

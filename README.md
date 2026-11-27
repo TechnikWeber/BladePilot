@@ -52,8 +52,12 @@ line.
   cut, warns about anything outside the cutting area and draws the job as SVG.
 - **Command line:** `machines`, `devices`, `inspect`, `cut --dry-run`, `cut --simulate`, and
   `replay` for USB captures made with Wireshark.
-- **USB:** finds connected machines. Sending is written for Linux, macOS and Windows (there
-  through the same driver Silhouette Studio uses) and waits for its first hardware test.
+- **USB:** finds connected machines and sends to them on Linux, macOS and Windows (there
+  through the same driver Silhouette Studio uses). Tested on a Portrait 4; still marked
+  experimental.
+- **Bluetooth** (experimental, Windows and Linux): searches for machines in range and sends over
+  Bluetooth Classic. No pairing and no PIN: `bladepilot devices --bluetooth` finds the machine
+  and prints the command to send to it.
 
 Print and cut, more of the Silhouette Studio format and more import formats are next: see
 the [roadmap](docs/ROADMAP.md).
@@ -62,8 +66,8 @@ the [roadmap](docs/ROADMAP.md).
 
 Open a design (or drop it on the window), place it on the mat and press **Preview** to watch
 the virtual plotter cut it, pass by pass, in the order the machine would. **Send** runs the job
-on the virtual plotter at machine pace, or on a machine on USB once you allow the experimental
-path. The job runs on its own thread; the window never waits for the machine.
+on the virtual plotter at machine pace, or on a machine on USB or Bluetooth once you allow the
+experimental path. The Bluetooth button next to the USB search finds machines in range. The job runs on its own thread; the window never waits for the machine.
 
 <p>
   <img alt="The animated preview: the pen has drawn, the blade cuts the second tag" src="docs/images/desktop-preview.png" width="49%">
@@ -137,7 +141,7 @@ npm run tauri build    # installable packages for your system
 | Machine | USB id | Status |
 |---|---|---|
 | Silhouette Portrait 3 | `0b4d:113a` | development target |
-| Silhouette Portrait 4 | `0b4d:113f` | development target |
+| Silhouette Portrait 4 | `0b4d:113f` | development target; tested over USB and Bluetooth |
 | Portrait 1 and 2, Cameo 1 to 5 (Plus, Pro), Cameo Pro MK II, Cameo 5 Alpha, Craft Robo CC200 | | known, not tested |
 
 `bladepilot machines` prints the full table with cutting widths and mats.
