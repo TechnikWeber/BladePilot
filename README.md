@@ -106,7 +106,7 @@ Pick the file for your system from the [releases](https://github.com/TechnikWebe
 The `.rpm` and `.deb` packages also install the udev rule that gives you access to the machine
 over USB. Windows and macOS warn about an unknown developer, because the files are not signed.
 With Smart App Control switched on, Windows may block a new release outright until it has built
-up a reputation; the zip of the same release, or a later download, usually gets through.
+up a reputation; signed builds are on the roadmap.
 
 Then, in a terminal:
 
