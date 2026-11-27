@@ -54,8 +54,8 @@ the machine buffers, and how Studio stops a running job.
    git clone https://github.com/TechnikWeber/BladePilot
    cd BladePilot
    $tag = gh release list --repo TechnikWeber/BladePilot --limit 1 --json tagName --jq ".[0].tagName"
-   gh release download $tag --repo TechnikWeber/BladePilot --pattern "*windows-x86_64.exe" --dir re\bin
-   Get-ChildItem re\bin\BladePilot-*-windows-x86_64.exe | Rename-Item -NewName bladepilot.exe
+   gh release download $tag --repo TechnikWeber/BladePilot --pattern "bladepilot-cli-*-windows-x86_64.exe" --dir re\bin
+   Get-ChildItem re\bin\bladepilot-cli-*-windows-x86_64.exe | Rename-Item -NewName bladepilot.exe
    ```
 
    Without the GitHub CLI, download the `.exe` from the releases page into `re\bin` instead.

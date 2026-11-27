@@ -95,7 +95,7 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $name = "BladePilot-$env:VERSION-windows-${{ matrix.arch }}"
+          $name = "bladepilot-cli-$env:VERSION-windows-${{ matrix.arch }}"
           New-Item -ItemType Directory -Force -Path "dist/$name", "dist/out" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/bladepilot.exe" "dist/$name/"
           Copy-Item README.md, LICENSE "dist/$name/"
@@ -125,7 +125,7 @@ jobs:
           ./bladepilot --version
       - name: Package
         run: |
-          name="BladePilot-$VERSION-macos-universal"
+          name="bladepilot-cli-$VERSION-macos-universal"
           mkdir -p "dist/$name" dist/out
           cp bladepilot README.md LICENSE "dist/$name/"
           tar -C dist -czf "dist/out/$name.tar.gz" "$name"

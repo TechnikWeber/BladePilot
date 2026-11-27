@@ -11,7 +11,7 @@ mkdir -p "$out" dist/stage
 cp "$bin" dist/stage/bladepilot
 
 # Plain archive
-name=BladePilot-$version-linux-$arch
+name=bladepilot-cli-$version-linux-$arch
 mkdir -p "dist/$name"
 cp "$bin" README.md LICENSE packaging/linux/70-bladepilot.rules "dist/$name/"
 tar -C dist -czf "$out/$name.tar.gz" "$name"
@@ -28,6 +28,6 @@ cp "$bin" "$appdir/usr/bin/bladepilot"
 cp packaging/linux/bladepilot.desktop "$appdir/bladepilot.desktop"
 cp packaging/icons/bladepilot.png "$appdir/bladepilot.png"
 ln -sf usr/bin/bladepilot "$appdir/AppRun"
-update="gh-releases-zsync|TechnikWeber|BladePilot|latest|BladePilot-*-$arch.AppImage.zsync"
-(cd "$out" && ARCH=$arch APPIMAGE_EXTRACT_AND_RUN=1 appimagetool -u "$update" "../../$appdir" "BladePilot-$version-$arch.AppImage")
+update="gh-releases-zsync|TechnikWeber|BladePilot|latest|bladepilot-cli-*-$arch.AppImage.zsync"
+(cd "$out" && ARCH=$arch APPIMAGE_EXTRACT_AND_RUN=1 appimagetool -u "$update" "../../$appdir" "bladepilot-cli-$version-$arch.AppImage")
 ls -la "$out"

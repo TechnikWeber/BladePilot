@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 – 2026-11-27
+
+- The command-line downloads are called `bladepilot-cli-…` now (AppImage, Windows `.exe` and
+  `.zip`, macOS and Linux archives), so they are not mistaken for the desktop app
+  (`BladePilot-Desktop-…`). Its AppImage shows up as "BladePilot (command line)".
+- The README says what is tested: cutting on a Portrait 4 over USB and Bluetooth.
+
 ## 0.5.0 – 2026-11-27
 
 - On Linux the desktop app checks at start whether a udev rule gives you USB access to the

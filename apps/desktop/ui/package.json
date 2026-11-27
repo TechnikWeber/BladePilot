@@ -1,7 +1,7 @@
 {
   "name": "bladepilot-desktop-ui",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "Web front end of the BladePilot desktop app",
   "license": "MIT",

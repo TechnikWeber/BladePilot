@@ -100,11 +100,11 @@ Pick the file for your system from the [releases](https://github.com/TechnikWebe
 
 | System | File | Start |
 |---|---|---|
-| Any Linux | `BladePilot-…-x86_64.AppImage` (or `aarch64`) | `chmod +x BladePilot-*.AppImage`, then run it |
+| Any Linux | `bladepilot-cli-…-x86_64.AppImage` (or `aarch64`) | `chmod +x bladepilot-cli-*.AppImage`, then run it in a terminal |
 | Fedora, openSUSE | `bladepilot-….x86_64.rpm` | `sudo dnf install ./bladepilot-*.rpm` |
 | Debian, Ubuntu, Raspberry Pi OS | `bladepilot_…_amd64.deb` (or `arm64`) | `sudo apt install ./bladepilot_*.deb` |
-| Windows | `BladePilot-…-windows-x86_64.exe` (or `arm64`) | run it from a terminal |
-| macOS | `BladePilot-…-macos-universal.tar.gz` | unpack, `xattr -d com.apple.quarantine bladepilot` |
+| Windows | `bladepilot-cli-…-windows-x86_64.exe` (or `arm64`) | run it from a terminal |
+| macOS | `bladepilot-cli-…-macos-universal.tar.gz` | unpack, `xattr -d com.apple.quarantine bladepilot` |
 
 The `.rpm` and `.deb` packages also install the udev rule that gives you access to the machine
 over USB; the AppImage offers to set it up at its first start (it asks for your password) or

@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=BladePilot
+Name=BladePilot (command line)
 Comment=Cutting software for Silhouette Portrait and Cameo machines
 Exec=bladepilot
 Icon=bladepilot
