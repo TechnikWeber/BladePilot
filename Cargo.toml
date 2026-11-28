@@ -36,6 +36,8 @@ resvg = "0.50"
 pdf-writer = "0.15"
 miniz_oxide = "0.9"
 base64 = "0.23"
+dxf = "0.6"
+lopdf = { version = "0.47", default-features = false }
 
 bladepilot-machines = { path = "crates/machines" }
 bladepilot-design = { path = "crates/design" }

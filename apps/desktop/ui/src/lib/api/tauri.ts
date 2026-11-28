@@ -5,7 +5,7 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 import demoSvg from './demo.svg?raw';
 import type { Backend, DesignInfo, JobEvent } from './types';
 
-const DESIGN_EXTENSIONS = ['svg', 'svgz', 'studio', 'studio3', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
+const DESIGN_EXTENSIONS = ['svg', 'svgz', 'pdf', 'dxf', 'studio', 'studio3', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
 
 async function importBytes(name: string, bytes: Uint8Array): Promise<DesignInfo> {
   return invoke('import_design', { name, bytes: Array.from(bytes) });
@@ -22,7 +22,7 @@ export const tauriBackend: Backend = {
     const picked = await open({
       multiple: true,
       directory: false,
-      filters: [{ name: 'Designs (SVG, Silhouette Studio, pictures)', extensions: DESIGN_EXTENSIONS }],
+      filters: [{ name: 'Designs (SVG, PDF, DXF, Silhouette Studio, pictures)', extensions: DESIGN_EXTENSIONS }],
     });
     const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
     const designs: DesignInfo[] = [];
@@ -41,6 +41,8 @@ export const tauriBackend: Backend = {
     await invoke('print_sheet', { job, path });
     return path;
   },
+  fonts: () => invoke('fonts'),
+  makeDesign: (spec) => invoke('make_design', { spec }),
   forgetDesign: (id) => invoke('forget_design', { id }),
   planJob: (job) => invoke('plan_job', { job }),
   simulateJob: (job) => invoke('simulate_job', { job }),

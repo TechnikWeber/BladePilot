@@ -1,12 +1,31 @@
 <script lang="ts">
-  // Tool, force, speed, depth and repeats of one pass.
+  // Material, tool, force, speed, depth and repeats of one pass.
   import type { Settings } from '../lib/api/types';
   import { t } from '../lib/i18n/index.svelte';
+  import { app } from '../lib/state.svelte';
+  import { matchMaterial } from '../lib/materials';
   import NumberField from './NumberField.svelte';
   import Icon from './Icon.svelte';
 
   let { settings, onchange }: { settings: Settings; onchange: () => void } = $props();
   let more = $state(false);
+  let naming = $state(false);
+  let name = $state('');
+
+  const material = $derived(matchMaterial(settings, app.materials));
+
+  function choose(id: string): void {
+    const m = app.materials.find((x) => x.id === id);
+    if (!m) return;
+    app.applyMaterial(settings, m);
+    onchange();
+  }
+
+  function saveAs(): void {
+    app.saveMaterial(name, settings);
+    naming = false;
+    name = '';
+  }
 
   function set<K extends keyof Settings>(key: K, value: Settings[K]): void {
     settings[key] = value;
@@ -15,6 +34,27 @@
 </script>
 
 <div class="editor">
+  <div class="material-row">
+    <select class="material" value={material?.id ?? ''} onchange={(e) => choose((e.target as HTMLSelectElement).value)} aria-label={t('material.title')}>
+      <option value="" disabled>{t('material.own')}</option>
+      {#each app.materials as m (m.id)}
+        <option value={m.id}>{app.materialName(m)}</option>
+      {/each}
+    </select>
+    {#if material && !material.builtin}
+      <button class="icon-btn" title={t('material.delete')} onclick={() => app.deleteMaterial(material.id)}><Icon name="trash" size={15} /></button>
+    {:else if !material}
+      <button class="icon-btn" title={t('material.saveAs')} onclick={() => (naming = !naming)}><Icon name="check" size={15} /></button>
+    {/if}
+  </div>
+  {#if naming && !material}
+    <form class="name-row" onsubmit={(e) => { e.preventDefault(); saveAs(); }}>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input type="text" bind:value={name} placeholder={t('material.namePlaceholder')} autofocus />
+      <button class="btn small" type="submit" disabled={!name.trim()}>{t('material.save')}</button>
+    </form>
+  {/if}
+  {#if material?.builtin}<p class="hint material-hint">{t('material.hint')}</p>{/if}
   <div class="tool-row">
     <span class="label">{t('settings.tool')}</span>
     <div class="segmented">
@@ -58,6 +98,48 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .material-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .material {
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    padding: 0 8px;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .name-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .name-row input {
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    padding: 0 8px;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .material-hint {
+    margin: -4px 0 0;
+    font-size: 11.5px;
   }
 
   .tool-row {

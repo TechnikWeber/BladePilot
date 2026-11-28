@@ -22,6 +22,13 @@
   <div class="sep"></div>
 
   <div class="group">
+    <button class="btn" title={t('top.textHint')} onclick={() => app.openMake('text')}><Icon name="text" size={16} />{t('top.text')}</button>
+    <button class="btn" title={t('top.shapeHint')} onclick={() => app.openMake('shape')}><Icon name="shapes" size={16} />{t('top.shape')}</button>
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="group">
     <button class="icon-btn" title={t('top.undo')} disabled={!app.canUndo} onclick={() => app.undo()}><Icon name="undo" /></button>
     <button class="icon-btn" title={t('top.redo')} disabled={!app.canRedo} onclick={() => app.redo()}><Icon name="redo" /></button>
   </div>
@@ -34,6 +41,7 @@
     <button class="icon-btn" title={t('top.mirrorH')} disabled={!hasSelection} onclick={() => app.mirrorSelected(true)}><Icon name="mirrorH" /></button>
     <button class="icon-btn" title={t('top.mirrorV')} disabled={!hasSelection} onclick={() => app.mirrorSelected(false)}><Icon name="mirrorV" /></button>
     <button class="icon-btn" title={t('top.delete')} disabled={!hasSelection} onclick={() => app.removeSelected()}><Icon name="trash" /></button>
+    <button class="icon-btn" title={t('top.arrange')} disabled={!app.items.length} onclick={() => app.arrange()}><Icon name="arrange" /></button>
   </div>
 
   <div class="spacer"></div>

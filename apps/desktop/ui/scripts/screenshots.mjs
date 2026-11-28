@@ -38,6 +38,8 @@ const shots = [
   ['desktop-preview.png', '?demo&preview=0.62&lang=en&theme=light'],
   ['desktop-send.png', '?demo&send=change&lang=en&theme=light'],
   ['desktop-print.png', '?demo&print&lang=en&theme=light'],
+  ['desktop-vinyl.png', '?shapes&lang=en&theme=light'],
+  ['desktop-make.png', '?make=shape&lang=en&theme=light'],
 ];
 
 for (const [name, query] of shots) {

@@ -18,13 +18,16 @@ use craft_plotter::Program;
 use craft_plotter::gpgl::silhouette::{Mat, Status};
 
 use crate::model::{
-    ApiError, AppInfo, ColorInfo, DesignInfo, DeviceInfo, DeviceStatus, ImageInfo, ItemCut, JobAction, JobEvent, JobRequest, MachineInfo, MatInfo,
-    PassInfo, PlacedItem, PlanInfo, PrintSetup, Settings, ShapeInfo, Simulation, StrokeInfo, Target, Tool, TraceRequest, TraceSourceName,
+    ApiError, AppInfo, ColorInfo, DesignInfo, DeviceInfo, DeviceStatus, ImageInfo, ItemCut, JobAction, JobEvent, JobRequest, MachineInfo, MadeSpec,
+    MatInfo, PassInfo, PlacedItem, PlanInfo, PrintSetup, Settings, ShapeInfo, Simulation, StrokeInfo, Target, Tool, TraceRequest, TraceSourceName,
 };
 
 /// The colour contour cut lines get, so they form a pass of their own (magenta, as print shops
 /// mark cut contours).
 pub const CONTOUR_COLOR: Rgb = Rgb(255, 0, 255);
+
+/// The colour weeding boxes and lines get: a pass of their own, cut after the design.
+pub const WEED_COLOR: Rgb = Rgb(0, 160, 160);
 
 /// Resolution designs are printed at, pixels per mm (300 dpi).
 const PRINT_PX_PER_MM: f64 = 300.0 / 25.4;
@@ -38,6 +41,8 @@ struct Stored {
     svg: Option<Vec<u8>>,
     /// How a picture was traced.
     trace: Option<TraceSettings>,
+    /// What a made shape or text was made from.
+    made: Option<MadeSpec>,
 }
 
 /// Tolerance for outlines that are only measured or drawn, mm.
@@ -65,6 +70,8 @@ pub struct Service {
     /// The open Bluetooth connection, kept between status queries and jobs: after a disconnect
     /// the machine takes up to about 40 s before it accepts the next one.
     bluetooth: Mutex<BluetoothLink>,
+    /// The system's fonts, loaded on first use (it takes a moment).
+    fonts: std::sync::OnceLock<Arc<bladepilot_design::usvg_fontdb::Database>>,
 }
 
 /// A Bluetooth connection to keep, with the address it goes to.
@@ -87,6 +94,7 @@ impl Default for Service {
             test_id: Mutex::default(),
             virtual_pace: Some(VIRTUAL_PACE_MM_S),
             bluetooth: Mutex::default(),
+            fonts: std::sync::OnceLock::new(),
         }
     }
 }
@@ -249,7 +257,42 @@ fn stored_info(id: u32, stored: &Stored) -> DesignInfo {
             Some(ImageInfo { href: preview_href(raster), width_mm: round3(width_mm), height_mm: round3(height_mm), trace: trace_request(&trace) });
     }
     info.printable = stored.design.raster.is_some() || stored.svg.is_some();
+    info.made.clone_from(&stored.made);
     info
+}
+
+/// A design's outlines as an SVG in its own page units (CSS pixels), to print designs that came
+/// without artwork of their own: fills stay fills, outlines are drawn thin.
+fn svg_of(design: &Design) -> Option<Vec<u8>> {
+    let bb = design.bbox()?;
+    let to_px = Affine::scale(1.0 / bladepilot_design::MM_PER_PX);
+    let mut body = String::new();
+    for shape in &design.shapes {
+        let mut path = shape.path.clone();
+        path.apply_affine(to_px);
+        let fill = shape.fill.map_or_else(|| "none".to_string(), Rgb::hex);
+        let stroke = match (shape.stroke, shape.fill) {
+            (Some(c), _) => format!(r#" stroke="{}" stroke-width="1.2""#, c.hex()),
+            _ => String::new(),
+        };
+        body.push_str(&format!(r#"<path d="{}" fill="{fill}"{stroke} fill-rule="evenodd"/>"#, path_data(&path)));
+    }
+    let (w, h) = ((bb.x1 + 2.0) / bladepilot_design::MM_PER_PX, (bb.y1 + 2.0) / bladepilot_design::MM_PER_PX);
+    Some(format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w:.1}" height="{h:.1}">{body}</svg>"#).into_bytes())
+}
+
+fn shape_spec(spec: &MadeSpec) -> Option<bladepilot_design::ShapeSpec> {
+    let MadeSpec::Shape { shape, width_mm, height_mm, corner_mm, sides, inner } = spec else { return None };
+    use bladepilot_design::ShapeKind as K;
+    let kind = match shape.as_str() {
+        "rectangle" => K::Rectangle,
+        "ellipse" => K::Ellipse,
+        "polygon" => K::Polygon,
+        "star" => K::Star,
+        "heart" => K::Heart,
+        _ => return None,
+    };
+    Some(bladepilot_design::ShapeSpec { kind, width_mm: *width_mm, height_mm: *height_mm, corner_mm: *corner_mm, sides: *sides, inner: *inner })
 }
 
 /// What the front end needs to show a design.
@@ -282,6 +325,9 @@ pub fn design_info(id: u32, name: &str, design: &Design) -> DesignInfo {
             bladepilot_design::Format::Studio => "studio",
             bladepilot_design::Format::Studio3 => "studio3",
             bladepilot_design::Format::Image => "image",
+            bladepilot_design::Format::Dxf => "dxf",
+            bladepilot_design::Format::Pdf => "pdf",
+            bladepilot_design::Format::Made => "made",
         }
         .to_string(),
         page_mm: design.page_mm.map(|(w, h)| [round3(w), round3(h)]),
@@ -296,6 +342,7 @@ pub fn design_info(id: u32, name: &str, design: &Design) -> DesignInfo {
         warnings: design.warnings.clone(),
         image: None,
         printable: false,
+        made: None,
     }
 }
 
@@ -399,9 +446,15 @@ impl Service {
     }
 
     fn keep(&self, name: &str, design: Design, svg: Option<Vec<u8>>) -> DesignInfo {
+        self.keep_made(name, design, svg, None)
+    }
+
+    fn keep_made(&self, name: &str, design: Design, svg: Option<Vec<u8>>, made: Option<MadeSpec>) -> DesignInfo {
         let id = self.next_design.fetch_add(1, Ordering::Relaxed);
         let trace = design.raster.as_ref().map(TraceSettings::for_raster);
-        let stored = Stored { name: name.to_string(), design, svg, trace };
+        // Designs without artwork of their own print as their outlines.
+        let svg = if svg.is_none() && design.raster.is_none() { svg_of(&design) } else { svg };
+        let stored = Stored { name: name.to_string(), design, svg, trace, made };
         let info = stored_info(id, &stored);
         lock(&self.designs).insert(id, Arc::new(stored));
         info
@@ -419,6 +472,46 @@ impl Service {
         let design = bladepilot_design::import(bytes, Some(name))?;
         let svg = (design.format == bladepilot_design::Format::Svg).then(|| bytes.to_vec());
         Ok(self.keep(name, design, svg))
+    }
+
+    /// The fonts installed on the system, loaded once.
+    fn font_db(&self) -> &Arc<bladepilot_design::usvg_fontdb::Database> {
+        self.fonts.get_or_init(bladepilot_design::system_fonts)
+    }
+
+    /// The font families to choose from for text.
+    pub fn fonts(&self) -> Vec<String> {
+        bladepilot_design::font_families(self.font_db())
+    }
+
+    /// Makes a shape or sets a text as a new design.
+    pub fn make_design(&self, spec: &MadeSpec) -> Result<DesignInfo, ApiError> {
+        let (name, design) = match spec {
+            MadeSpec::Shape { shape, .. } => {
+                let s = shape_spec(spec).ok_or_else(|| ApiError::new("badShape", format!("unknown shape `{shape}`")))?;
+                (shape.clone(), bladepilot_design::make_shape(&s))
+            }
+            MadeSpec::Text { text, family, size_mm, bold, italic, align, letter_spacing_mm, line_height } => {
+                let align = match align.as_str() {
+                    "center" => bladepilot_design::TextAlign::Center,
+                    "right" => bladepilot_design::TextAlign::Right,
+                    _ => bladepilot_design::TextAlign::Left,
+                };
+                let t = bladepilot_design::TextSpec {
+                    text: text.clone(),
+                    family: family.clone(),
+                    size_mm: *size_mm,
+                    bold: *bold,
+                    italic: *italic,
+                    align,
+                    letter_spacing_mm: *letter_spacing_mm,
+                    line_height: *line_height,
+                };
+                let name: String = text.lines().next().unwrap_or_default().chars().take(24).collect();
+                (name, bladepilot_design::make_text(&t, self.font_db())?)
+            }
+        };
+        Ok(self.keep_made(&name, design, None, Some(spec.clone())))
     }
 
     /// The test cut pattern as a design (top-left corner at the page origin), kept once.
@@ -454,7 +547,7 @@ impl Service {
         let mut design = stored.design.clone();
         design.shapes = bladepilot_design::trace_raster(raster, &settings);
         design.warnings.clear();
-        let updated = Stored { name: stored.name.clone(), design, svg: None, trace: Some(settings) };
+        let updated = Stored { name: stored.name.clone(), design, svg: None, trace: Some(settings), made: None };
         let info = stored_info(id, &updated);
         lock(&self.designs).insert(id, Arc::new(updated));
         lock(&self.contours).retain(|(d, _), _| *d != id);
@@ -503,10 +596,23 @@ impl Service {
                 }
                 ItemCut::None => Vec::new(),
             };
-            for mut shape in shapes {
-                shape.path.apply_affine(m);
-                out.shapes.push(shape);
+            let mut placed: Vec<Shape> = shapes
+                .into_iter()
+                .map(|mut shape| {
+                    shape.path.apply_affine(m);
+                    shape
+                })
+                .collect();
+            if let Some(weed) = item.weed {
+                let around = Design { shapes: placed.clone(), ..Design::default() };
+                let spec = bladepilot_design::WeedSpec { margin_mm: weed.margin_mm, lines: weed.lines };
+                placed.extend(bladepilot_design::weed_lines(&around, &spec).into_iter().map(|path| Shape {
+                    path,
+                    stroke: Some(WEED_COLOR),
+                    fill: None,
+                }));
             }
+            out.shapes.extend(placed);
         }
         Ok(out)
     }
@@ -820,7 +926,7 @@ impl Transport for Paced {
 
 /// The arguments that name existing files with a design extension.
 pub fn startup_files(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std::path::PathBuf> {
-    const EXTENSIONS: [&str; 10] = ["svg", "svgz", "studio", "studio3", "png", "jpg", "jpeg", "webp", "bmp", "gif"];
+    const EXTENSIONS: [&str; 12] = ["svg", "svgz", "studio", "studio3", "pdf", "dxf", "png", "jpg", "jpeg", "webp", "bmp", "gif"];
     args.map(std::path::PathBuf::from)
         .filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())))
         .filter(|p| p.is_file())
@@ -915,6 +1021,7 @@ pub fn virtual_status(machine: &str) -> Result<DeviceStatus, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::WeedRequest;
     use std::sync::mpsc;
 
     fn fixture(name: &str) -> Vec<u8> {
@@ -930,7 +1037,7 @@ mod tests {
         JobRequest {
             machine: "portrait3".to_string(),
             mat: "8x12".to_string(),
-            items: vec![PlacedItem { design: design.id, matrix, cut: ItemCut::default(), print: false }],
+            items: vec![PlacedItem { design: design.id, matrix, cut: ItemCut::default(), print: false, weed: None }],
             by_color: true,
             manual_order: false,
             settings: Settings::default(),
@@ -1168,7 +1275,13 @@ mod tests {
         let job = JobRequest {
             machine: "portrait4".into(),
             mat: "8.5x12".into(),
-            items: vec![PlacedItem { design: test.id, matrix: [1.0, 0.0, 0.0, 1.0, 190.0, 280.0], cut: ItemCut::default(), print: false }],
+            items: vec![PlacedItem {
+                design: test.id,
+                matrix: [1.0, 0.0, 0.0, 1.0, 190.0, 280.0],
+                cut: ItemCut::default(),
+                print: false,
+                weed: None,
+            }],
             by_color: false,
             manual_order: false,
             settings: Settings { force: Some(8), ..Settings::default() },
@@ -1188,7 +1301,7 @@ mod tests {
         let job = JobRequest {
             machine: "portrait4".into(),
             mat: "8.5x12".into(),
-            items: vec![PlacedItem { design: design.id, matrix: [1.0, 0.0, 0.0, 1.0, 12.0, 20.0], cut, print: print.is_some() }],
+            items: vec![PlacedItem { design: design.id, matrix: [1.0, 0.0, 0.0, 1.0, 12.0, 20.0], cut, print: print.is_some(), weed: None }],
             by_color: true,
             manual_order: false,
             settings: Settings::default(),
@@ -1196,6 +1309,77 @@ mod tests {
             print,
         };
         (job, design.id)
+    }
+
+    fn made_job(service: &Service, spec: MadeSpec, weed: Option<WeedRequest>) -> JobRequest {
+        let design = service.make_design(&spec).unwrap();
+        assert_eq!(design.format, "made");
+        assert_eq!(design.made.as_ref(), Some(&spec), "the spec comes back to change it later");
+        JobRequest {
+            machine: "portrait4".into(),
+            mat: "8.5x12".into(),
+            items: vec![PlacedItem { design: design.id, matrix: [1.0, 0.0, 0.0, 1.0, 20.0, 20.0], cut: ItemCut::default(), print: false, weed }],
+            by_color: true,
+            manual_order: false,
+            settings: Settings::default(),
+            colors: Vec::new(),
+            print: None,
+        }
+    }
+
+    fn star() -> MadeSpec {
+        MadeSpec::Shape { shape: "star".into(), width_mm: 50.0, height_mm: 50.0, corner_mm: 0.0, sides: 5, inner: 0.5 }
+    }
+
+    #[test]
+    fn a_made_shape_is_cut_and_its_weeding_box_comes_after_it() {
+        let service = Service::new();
+        let plain = service.plan(&made_job(&service, star(), None)).unwrap();
+        assert_eq!(plain.passes.len(), 1);
+        let weeded = service.plan(&made_job(&service, star(), Some(WeedRequest { margin_mm: 5.0, lines: true }))).unwrap();
+        assert_eq!(weeded.passes.len(), 2);
+        assert_eq!(weeded.passes[1].color.as_deref(), Some("#00a0a0"), "the weeding pass is cut last");
+        assert!(weeded.passes[1].paths >= 5, "box and lines: {}", weeded.passes[1].paths);
+        let [x0, y0, x1, _] = weeded.bbox.unwrap();
+        assert!((x0 - 15.0).abs() < 0.01 && (y0 - 15.0).abs() < 0.01 && (x1 - 75.0).abs() < 0.01, "{x0} {y0} {x1}");
+        assert!(
+            matches!(service.make_design(&MadeSpec::Shape { shape: "blob".into(), width_mm: 1.0, height_mm: 1.0, corner_mm: 0.0, sides: 5, inner: 0.5 }), Err(e) if e.code == "badShape")
+        );
+    }
+
+    #[test]
+    fn text_is_set_with_the_system_fonts() {
+        let service = Service::new();
+        let fonts = service.fonts();
+        if fonts.is_empty() {
+            return;
+        }
+        let spec = MadeSpec::Text {
+            text: "Lena".into(),
+            family: fonts[0].clone(),
+            size_mm: 30.0,
+            bold: false,
+            italic: false,
+            align: "left".into(),
+            letter_spacing_mm: 0.0,
+            line_height: 1.2,
+        };
+        let plan = service.plan(&made_job(&service, spec.clone(), None)).unwrap();
+        assert_eq!(plan.passes.len(), 1);
+        let MadeSpec::Text { family, size_mm, bold, italic, align, letter_spacing_mm, line_height, .. } = spec else { unreachable!() };
+        let empty = MadeSpec::Text { text: "  ".into(), family, size_mm, bold, italic, align, letter_spacing_mm, line_height };
+        assert_eq!(service.make_design(&empty).unwrap_err().code, "text");
+    }
+
+    #[test]
+    fn dxf_and_pdf_files_open_like_any_design() {
+        let service = Service::new();
+        let dxf = b"0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\n0\n10\n50\n20\n50\n40\n20\n0\nENDSEC\n0\nEOF\n";
+        let d = service.import_design("ring.dxf", dxf).unwrap();
+        assert_eq!(d.format, "dxf");
+        assert!((d.bbox[2] - 40.0).abs() < 1e-6, "{:?}", d.bbox);
+        assert!(d.printable, "outlines print as they are");
+        assert_eq!(service.import_design("x.pdf", b"%PDF-1.4 broken").unwrap_err().code, "pdf");
     }
 
     #[test]

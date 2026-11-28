@@ -9,6 +9,7 @@
   import type { TraceRequest } from '../lib/api/types';
 
   let keepRatio = $state(true);
+  let copies = $state(4);
   let traceTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Traces the picture again a moment after the last change. */
@@ -55,7 +56,10 @@
 <section class="panel-section">
   <h3 class="panel-title">{t('item.title')}</h3>
   {#if item && design && box && size}
-    <div class="name" title={design.name}><Icon name="layers" size={15} /><span>{design.name}</span></div>
+    <div class="name" title={design.name}>
+      <Icon name={design.made ? (design.made.kind === 'text' ? 'text' : 'shapes') : 'layers'} size={15} /><span>{design.name}</span>
+      {#if design.made}<button class="btn ghost small edit" onclick={() => app.editMade()}>{t('make.edit')}</button>{/if}
+    </div>
     {#if app.outside.has(item.id)}
       <div class="outside"><Icon name="alert" size={14} />{t('item.outside')}</div>
     {/if}
@@ -115,6 +119,38 @@
           <span class="track"></span>{t('print.item')}
         </label>
       {/if}
+    </div>
+    {#if item.cut.kind !== 'none'}
+      {@const weed = item.weed}
+      <div class="cut">
+        <span class="label">{t('weed.title')}</span>
+        <label class="switch">
+          <input type="checkbox" checked={!!weed} onchange={(e) => app.setWeed((e.target as HTMLInputElement).checked ? { marginMm: 3, lines: true } : null)} />
+          <span class="track"></span>{t('weed.box')}
+        </label>
+        {#if weed}
+          <div class="offset">
+            <NumberField
+              label={t('weed.margin')}
+              value={toUnit(weed.marginMm)}
+              digits={app.unit === 'in' ? 3 : 1}
+              step={app.unit === 'in' ? 0.02 : 0.5}
+              min={0}
+              unit={unitLabel()}
+              onchange={(v) => v !== null && app.setWeed({ ...weed, marginMm: Math.max(0.5, Math.min(50, fromUnit(v))) })}
+            />
+          </div>
+          <label class="switch">
+            <input type="checkbox" checked={weed.lines} onchange={(e) => app.setWeed({ ...weed, lines: (e.target as HTMLInputElement).checked })} />
+            <span class="track"></span>{t('weed.lines')}
+          </label>
+          <p class="hint">{t('weed.hint')}</p>
+        {/if}
+      </div>
+    {/if}
+    <div class="cut copies">
+      <NumberField label={t('copies.label')} value={copies} digits={0} step={1} min={1} max={200} onchange={(v) => (copies = Math.max(1, Math.min(200, Math.round(v ?? 1))))} />
+      <button class="btn" onclick={() => app.addCopies(copies)}><Icon name="copies" size={15} />{t('copies.add')}</button>
     </div>
     {#if design.image}
       {@const trace = design.image.trace}
@@ -208,6 +244,19 @@
 
   .warnings {
     margin-top: 12px;
+  }
+
+  .name .edit {
+    margin-left: auto;
+  }
+
+  .copies {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  .copies :global(.nf) {
+    flex: 0 0 90px;
   }
 
   .cut {

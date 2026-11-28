@@ -7,6 +7,7 @@
   import { fmtLength } from '../lib/format';
   import { colorName } from '../lib/colors';
   import type { Settings } from '../lib/api/types';
+  import { matchMaterial } from '../lib/materials';
   import SettingsEditor from './SettingsEditor.svelte';
   import Icon from './Icon.svelte';
 
@@ -22,6 +23,8 @@
   });
 
   function summary(s: Settings): string {
+    const material = matchMaterial(s, app.materials);
+    if (material) return app.materialName(material);
     const parts = [s.tool === 'pen' ? t('settings.pen') : t('settings.blade')];
     if (s.force !== null) parts.push(`${t('settings.force')} ${s.force}`);
     if (s.speed !== null) parts.push(`${t('settings.speed')} ${s.speed}`);
@@ -114,6 +117,11 @@
     </label>
     <p class="hint explain">{app.manualOrder ? t('colors.manualHint') : t('colors.autoHint')}</p>
   {/if}
+  <label class="switch mirror" title={t('colors.mirrorHint')}>
+    <input type="checkbox" checked={app.mirrored} onchange={(e) => app.setMirror((e.target as HTMLInputElement).checked)} />
+    <span class="track"></span>{t('colors.mirror')}
+  </label>
+  {#if app.mirrored}<p class="hint explain">{t('colors.mirrorHint')}</p>{/if}
 
   {#if !rows.length}
     <p class="hint">{t('colors.empty')}</p>
@@ -205,7 +213,8 @@
     letter-spacing: 0;
   }
 
-  .auto {
+  .auto,
+  .mirror {
     margin-top: 10px;
   }
 

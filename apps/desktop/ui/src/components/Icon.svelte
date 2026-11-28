@@ -45,6 +45,16 @@
     testCut: 'M4.5 4.5h15v15h-15Z M12 8l4 7H8Z',
     printer: 'M7 9V4h10v5 M7 17H5a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 5 9h14a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 19 17h-2 M7 14h10v6H7Z',
     contour: 'M8 5h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3Z M10 9h4v6h-4Z',
+    text: 'M5 6.5V5h14v1.5 M12 5v14 M9.5 19h5',
+    shapes: 'M3.5 10.5h7v7h-7Z M17 14a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z M12 3.5l3 5h-6Z',
+    arrange: 'M4 4h7v5H4Z M13 4h7v8h-7Z M4 11h7v9H4Z M13 14h7v6h-7Z',
+    weed: 'M4 4h16v16H4Z M8.5 8.5h7v7h-7Z M12 4v4.5 M12 15.5V20 M4 12h4.5 M15.5 12H20',
+    rectangle: 'M4 6h16v12H4Z',
+    ellipse: 'M12 18.5c4.7 0 8.5-2.9 8.5-6.5S16.7 5.5 12 5.5 3.5 8.4 3.5 12s3.8 6.5 8.5 6.5Z',
+    polygon: 'M12 3.5l8 5.8-3 9.7H7l-3-9.7Z',
+    star: 'M12 3.5l2.6 5.5 6 .7-4.5 4.1 1.2 5.9L12 16.8l-5.3 2.9 1.2-5.9-4.5-4.1 6-.7Z',
+    heart: 'M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10Z',
+    copies: 'M7 4h9v9H7Z M4 7v10h10',
   } as const;
   export type IconName = keyof typeof ICONS;
 </script>

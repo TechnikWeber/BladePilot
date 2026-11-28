@@ -1,7 +1,7 @@
 <script lang="ts">
   // The workbench: the cutting mat with its grid, rulers and cutting area, the designs on it, and
   // the handles to move, turn and resize them. Everything inside the SVG is in millimetres.
-  import { app, type Item, CONTOUR_COLOR, MARK, PAPERS } from '../lib/state.svelte';
+  import { app, type Item, CONTOUR_COLOR, MARK, PAPERS, WEED_COLOR } from '../lib/state.svelte';
   import { type Point, type Placement, MM_PER_INCH, gridLines, normalizeAngle, placementMatrix, placedHull, snap1d } from '../lib/geometry';
   import { displayColor, isDark } from '../lib/theme.svelte';
   import { t, num } from '../lib/i18n/index.svelte';
@@ -503,6 +503,20 @@
                 {/each}
               {/if}
             </g>
+            {#if item.weed && app.boxes[item.id] && cut.kind !== 'none'}
+              {@const b = app.boxes[item.id]}
+              {@const m = item.weed.marginMm}
+              <rect
+                x={b.x0 - m}
+                y={b.y0 - m}
+                width={b.x1 - b.x0 + 2 * m}
+                height={b.y1 - b.y0 + 2 * m}
+                class="weed"
+                class:skip={skipped.has(WEED_COLOR)}
+                vector-effect="non-scaling-stroke"
+                pointer-events="none"
+              />
+            {/if}
             {#if !picking}
               <polygon points={hullOf(item)} class="hit" vector-effect="non-scaling-stroke" onpointerdown={(e) => onItemDown(e, item)} role="presentation" />
             {/if}
@@ -722,6 +736,17 @@
     stroke: #d6189d;
     stroke-width: 1.8;
     stroke-linejoin: round;
+  }
+
+  .items .weed {
+    fill: none;
+    stroke: #00a0a0;
+    stroke-width: 1.4;
+    stroke-dasharray: 6 3;
+  }
+
+  .items .weed.skip {
+    stroke-opacity: 0.35;
   }
 
   .items .contour.skip {

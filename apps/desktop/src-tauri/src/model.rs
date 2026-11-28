@@ -90,6 +90,59 @@ pub struct DesignInfo {
     /// The design's artwork can be printed (pictures and SVG files).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub printable: bool,
+    /// A shape or text made in BladePilot: what it was made from, to change it later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made: Option<MadeSpec>,
+}
+
+/// A shape or a text to make.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum MadeSpec {
+    Shape {
+        /// `rectangle`, `ellipse`, `polygon`, `star` or `heart`.
+        shape: String,
+        width_mm: f64,
+        height_mm: f64,
+        #[serde(default)]
+        corner_mm: f64,
+        /// Polygon sides, star points.
+        #[serde(default = "five")]
+        sides: u32,
+        /// Star: inner radius as a share of the outer one.
+        #[serde(default = "half")]
+        inner: f64,
+    },
+    Text {
+        text: String,
+        /// Font family; empty for the default.
+        #[serde(default)]
+        family: String,
+        size_mm: f64,
+        #[serde(default)]
+        bold: bool,
+        #[serde(default)]
+        italic: bool,
+        /// `left`, `center` or `right`.
+        #[serde(default)]
+        align: String,
+        #[serde(default)]
+        letter_spacing_mm: f64,
+        #[serde(default = "line_height")]
+        line_height: f64,
+    },
+}
+
+fn five() -> u32 {
+    5
+}
+
+fn half() -> f64 {
+    0.5
+}
+
+fn line_height() -> f64 {
+    1.2
 }
 
 /// One shape, drawn as SVG path data in page mm.
@@ -159,6 +212,19 @@ pub struct PlacedItem {
     /// Print and cut: the design is printed on the sheet.
     #[serde(default)]
     pub print: bool,
+    /// Weeding aids around the design.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weed: Option<WeedRequest>,
+}
+
+/// A weeding box around a design, with lines through the waste if asked.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeedRequest {
+    /// Distance of the box from the design, mm.
+    pub margin_mm: f64,
+    #[serde(default)]
+    pub lines: bool,
 }
 
 /// What of a design is cut.
@@ -463,6 +529,9 @@ impl From<bladepilot_design::Error> for ApiError {
             E::Studio(S::TooLarge) => "tooLarge",
             E::Studio(_) => "studio",
             E::Image(_) => "image",
+            E::Dxf(_) => "dxf",
+            E::Pdf(_) => "pdf",
+            E::Text(_) => "text",
         };
         ApiError::new(code, e.to_string())
     }

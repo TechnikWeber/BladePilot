@@ -69,7 +69,7 @@ export interface ImageInfo {
 export interface DesignInfo {
   id: number;
   name: string;
-  format: 'svg' | 'studio' | 'studio3' | 'image';
+  format: 'svg' | 'studio' | 'studio3' | 'image' | 'dxf' | 'pdf' | 'made';
   pageMm: [number, number] | null;
   /** x0, y0, x1, y1 in page mm. */
   bbox: [number, number, number, number];
@@ -81,6 +81,31 @@ export interface DesignInfo {
   image?: ImageInfo;
   /** The artwork can be printed (pictures, SVG files). */
   printable?: boolean;
+  /** A shape or text made in BladePilot: what it was made from. */
+  made?: MadeSpec;
+}
+
+export type ShapeName = 'rectangle' | 'ellipse' | 'polygon' | 'star' | 'heart';
+
+/** A shape or text to make. */
+export type MadeSpec =
+  | { kind: 'shape'; shape: ShapeName; widthMm: number; heightMm: number; cornerMm: number; sides: number; inner: number }
+  | {
+      kind: 'text';
+      text: string;
+      family: string;
+      sizeMm: number;
+      bold: boolean;
+      italic: boolean;
+      align: 'left' | 'center' | 'right';
+      letterSpacingMm: number;
+      lineHeight: number;
+    };
+
+/** A weeding box around a design, with lines through the waste if asked. */
+export interface WeedRequest {
+  marginMm: number;
+  lines: boolean;
 }
 
 export type Tool = 'blade' | 'pen';
@@ -110,6 +135,8 @@ export interface PlacedItem {
   cut: ItemCut;
   /** Print and cut: printed on the sheet. */
   print: boolean;
+  /** Weeding aids around the design. */
+  weed?: WeedRequest | null;
 }
 
 export interface PrintSetup {
@@ -235,6 +262,10 @@ export interface Backend {
   contourPath(id: number, offsetMm: number): Promise<string>;
   /** Asks where to save the print sheet and writes it as PDF; the path, or null when cancelled. */
   printSheet(job: JobRequest): Promise<string | null>;
+  /** The font families installed on the system. */
+  fonts(): Promise<string[]>;
+  /** Makes a shape or sets a text as a new design. */
+  makeDesign(spec: MadeSpec): Promise<DesignInfo>;
   forgetDesign(id: number): Promise<void>;
   planJob(job: JobRequest): Promise<PlanInfo>;
   simulateJob(job: JobRequest): Promise<Simulation>;

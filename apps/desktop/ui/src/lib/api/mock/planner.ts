@@ -7,6 +7,8 @@ type Line = number[];
 
 /** The colour of contour cuts (as on the Rust side). */
 const CONTOUR = '#ff00ff';
+/** The colour of weeding boxes and lines (as on the Rust side). */
+const WEED = '#00a0a0';
 
 /**
  * A convex hull grown by `r` with round corners, closed: the browser demo's stand-in for the
@@ -147,18 +149,29 @@ export function planMock(job: JobRequest, designs: Map<number, DesignInfo>, mach
     };
     const cut = item.cut ?? { kind: 'lines', outerOnly: false, hidden: [] };
     if (cut.kind === 'none') continue;
+    let kept: { key: string | null; line: Line }[] = [];
     if (cut.kind === 'contour') {
-      if (skip.has(CONTOUR)) continue;
       const scale = Math.sqrt(Math.abs(a * d - b * c)) || 1;
-      addLines(job.byColor ? CONTOUR : null, [place(offsetHull(design.hull, cut.offsetMm / scale))]);
-      continue;
+      if (!skip.has(CONTOUR)) kept.push({ key: job.byColor ? CONTOUR : null, line: place(offsetHull(design.hull, cut.offsetMm / scale)) });
+    } else {
+      const lines: { key: string | null; line: Line }[] = [];
+      design.shapes.forEach((shape, index) => {
+        if (skip.has(shape.color) || cut.hidden.includes(index)) return;
+        for (const l of flattenPathData(shape.d)) lines.push({ key: job.byColor ? shape.color : null, line: place(l) });
+      });
+      kept = cut.outerOnly ? lines.filter((x) => !lines.some((y) => y !== x && around(y.line, x.line))) : lines;
     }
-    const lines: { key: string | null; line: Line }[] = [];
-    design.shapes.forEach((shape, index) => {
-      if (skip.has(shape.color) || cut.hidden.includes(index)) return;
-      for (const l of flattenPathData(shape.d)) lines.push({ key: job.byColor ? shape.color : null, line: place(l) });
-    });
-    const kept = cut.outerOnly ? lines.filter((x) => !lines.some((y) => y !== x && around(y.line, x.line))) : lines;
+    // Weeding: the box only (the desktop app adds the lines through the waste).
+    if (item.weed && kept.length && !skip.has(WEED)) {
+      let bb: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+      for (const { line } of kept) {
+        const b = bboxOf(line);
+        bb = [Math.min(bb[0], b[0]), Math.min(bb[1], b[1]), Math.max(bb[2], b[2]), Math.max(bb[3], b[3])];
+      }
+      const m = item.weed.marginMm;
+      const [x0, y0, x1, y1] = [bb[0] - m, bb[1] - m, bb[2] + m, bb[3] + m];
+      kept.push({ key: job.byColor ? WEED : null, line: [x0, y0, x1, y0, x1, y1, x0, y1, x0, y0] });
+    }
     for (const { key, line } of kept) addLines(key, [line]);
   }
   const all = groups.flatMap((g) => g.paths);

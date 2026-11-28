@@ -6,6 +6,7 @@ import testJson from './test-cut.json';
 import machinesJson from './machines.json';
 import { offsetHull, planMock, simulateMock } from './planner';
 import { importSvg } from './svg';
+import { madeDesign } from './shapes';
 import type { Backend, DesignInfo, JobAction, JobEvent, MachineInfo } from '../types';
 
 const machines = machinesJson as MachineInfo[];
@@ -111,6 +112,7 @@ export const mockBackend: Backend = {
   async openFile(file) {
     const name = file.name;
     if (/\.studio3?$/i.test(name)) throw { code: 'mockStudio', message: 'Silhouette Studio files need the desktop app' };
+    if (/\.(pdf|dxf)$/i.test(name)) throw { code: 'desktopOnly', message: 'PDF and DXF files need the desktop app' };
     if (/\.(png|jpe?g|webp|gif|bmp)$/i.test(name)) return keep(await pictureDesign(file));
     return keep(importSvg(await readText(file), name));
   },
@@ -141,6 +143,12 @@ export const mockBackend: Backend = {
   },
   async printSheet() {
     throw { code: 'desktopOnly', message: 'the browser demo cannot write files' };
+  },
+  async fonts() {
+    return [];
+  },
+  async makeDesign(spec) {
+    return keep(madeDesign(spec));
   },
   async forgetDesign(id) {
     designs.delete(id);

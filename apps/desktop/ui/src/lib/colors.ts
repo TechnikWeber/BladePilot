@@ -21,6 +21,7 @@ const PALETTE: [string, [number, number, number]][] = [
 export function colorName(hex: string | null): string {
   if (!hex) return t('colors.noColor');
   if (hex.toLowerCase() === '#ff00ff') return t('colors.contour');
+  if (hex.toLowerCase() === '#00a0a0') return t('colors.weed');
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
   if (!m) return hex;
   const rgb = [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];

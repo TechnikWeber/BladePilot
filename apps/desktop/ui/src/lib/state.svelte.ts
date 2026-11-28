@@ -6,7 +6,9 @@ import type {
   ApiError,
   AppInfo,
   ItemCut,
+  MadeSpec,
   PrintSetup,
+  WeedRequest,
   TraceRequest,
   UsbAccess,
   ColorInfo,
@@ -26,6 +28,8 @@ import type {
 } from './api/types';
 import { type Box, type Placement, designSize, inside, normalizeAngle, placedBox, placementMatrix, union } from './geometry';
 import { errorText, t } from './i18n/index.svelte';
+import type { Key } from './i18n/en';
+import { BUILTIN_MATERIALS, type Material, loadMaterials, storeMaterials } from './materials';
 
 export interface Item extends Placement {
   id: number;
@@ -34,10 +38,22 @@ export interface Item extends Placement {
   cut: ItemCut;
   /** Print and cut: printed on the sheet. */
   print: boolean;
+  /** Weeding box (and lines) around the design. */
+  weed: WeedRequest | null;
 }
 
 /** The colour contour cuts get, a pass of their own (as `CONTOUR_COLOR` on the Rust side). */
 export const CONTOUR_COLOR = '#ff00ff';
+/** The colour of weeding boxes and lines (as `WEED_COLOR` on the Rust side). */
+export const WEED_COLOR = '#00a0a0';
+/** Room left between designs when they are arranged, mm. */
+export const ARRANGE_GAP_MM = 3;
+
+/** The make dialog: a new shape or text, or a change to the item `itemId`. */
+export interface MakeState {
+  spec: MadeSpec;
+  itemId: number | null;
+}
 
 export const PAPERS = { a4: { w: 210, h: 297 }, letter: { w: 215.9, h: 279.4 } } as const;
 /** Marks: a square at the top left, brackets at the top right and bottom left (as bladepilot-print). */
@@ -213,6 +229,14 @@ class AppState {
   /** Print and cut is on: designs are printed with registration marks, then cut. */
   printMode = $state(false);
   printSetup = $state<PrintSetup>({ paper: 'a4', insetMm: 10 });
+  /** Everything is cut mirrored (heat transfer vinyl is cut from the back). */
+  mirrored = $state(false);
+  /** The user's own material profiles. */
+  customMaterials = $state<Material[]>([]);
+  materials = $derived([...BUILTIN_MATERIALS, ...this.customMaterials]);
+  /** Installed font families, once asked for. */
+  fonts = $state<string[] | null>(null);
+  make = $state<MakeState | null>(null);
   /** Click single lines of the selected design to leave them out. */
   lineSelect = $state(false);
   /** Contour path data by design and offset (in the design's own mm). */
@@ -330,6 +354,12 @@ class AppState {
       }
       for (const c of design.colors) add(c.color, c.shapes, c.lengthMm * k);
     }
+    for (const item of this.items) {
+      const box = this.boxes[item.id];
+      if (!item.weed || !box || item.cut.kind === 'none') continue;
+      const m = item.weed.marginMm;
+      add(WEED_COLOR, 1, 2 * (box.x1 - box.x0 + box.y1 - box.y0 + 4 * m));
+    }
     return out;
   });
 
@@ -364,7 +394,14 @@ class AppState {
     const items = [];
     for (const item of this.items) {
       const design = this.designs[item.design];
-      if (design) items.push({ design: item.design, matrix: placementMatrix(item, design), cut: $state.snapshot(item.cut), print: this.printMode && item.print });
+      if (design)
+        items.push({
+          design: item.design,
+          matrix: placementMatrix(item, design),
+          cut: $state.snapshot(item.cut),
+          print: this.printMode && item.print,
+          weed: item.weed ? { ...item.weed } : null,
+        });
     }
     return {
       machine: machine.id,
@@ -389,7 +426,7 @@ class AppState {
     return {
       machine: this.machine.id,
       mat: this.mat.id,
-      items: [{ design: design.id, matrix: [1, 0, 0, 1, test.x, test.y], cut: { kind: 'lines', outerOnly: false, hidden: [] }, print: false }],
+      items: [{ design: design.id, matrix: [1, 0, 0, 1, test.x, test.y], cut: { kind: 'lines', outerOnly: false, hidden: [] }, print: false, weed: null }],
       print: null,
       byColor: false,
       manualOrder: false,
@@ -403,14 +440,63 @@ class AppState {
   }
 
   prefsOf(color: string | null): ColorPrefs {
-    return this.prefs[colorKey(color)] ?? { settings: defaultSettings(), skip: false, pauseBefore: false };
+    const stored = this.prefs[colorKey(color)];
+    if (stored) return stored;
+    // Weeding lines go through the same film as the design: its first colour's settings.
+    if (color === WEED_COLOR) {
+      const film = this.colorInfos.find((c) => c.color !== WEED_COLOR && c.color !== CONTOUR_COLOR && this.prefs[colorKey(c.color)]);
+      if (film) return { settings: { ...this.prefs[colorKey(film.color)].settings }, skip: false, pauseBefore: false };
+    }
+    return { settings: defaultSettings(), skip: false, pauseBefore: false };
   }
 
   /** The stored prefs of a colour, created on first change. */
   editPrefs(color: string | null): ColorPrefs {
     const key = colorKey(color);
-    if (!this.prefs[key]) this.prefs[key] = { settings: defaultSettings(), skip: false, pauseBefore: false };
+    if (!this.prefs[key]) this.prefs[key] = $state.snapshot(this.prefsOf(color));
     return this.prefs[key];
+  }
+
+  /** Puts a material's settings on a colour (or the single pass); heat transfer vinyl mirrors the job. */
+  applyMaterial(settings: Settings, material: Material): void {
+    Object.assign(settings, $state.snapshot(material.settings));
+    if (material.mirror && !this.mirrored && this.items.length) {
+      this.setMirror(true);
+      this.toast(t('material.mirrored'), 'info');
+    }
+    this.savePrefs();
+  }
+
+  saveMaterial(name: string, settings: Settings): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const rest = this.customMaterials.filter((m) => m.name !== trimmed);
+    this.customMaterials = [...rest, { id: `u:${Date.now()}`, name: trimmed, builtin: false, settings: $state.snapshot(settings) }];
+    storeMaterials($state.snapshot(this.customMaterials));
+  }
+
+  deleteMaterial(id: string): void {
+    this.customMaterials = this.customMaterials.filter((m) => m.id !== id);
+    storeMaterials($state.snapshot(this.customMaterials));
+  }
+
+  materialName(m: Material): string {
+    return m.builtin ? t(m.name as Key) : m.name;
+  }
+
+  /** Mirrors every design across the middle of the layout, or back. */
+  setMirror(on: boolean): void {
+    if (on === this.mirrored) return;
+    this.mirrored = on;
+    const box = this.itemsBox;
+    if (!box || !this.items.length) return;
+    this.checkpoint();
+    const mid = (box.x0 + box.x1) / 2;
+    for (const item of this.items) {
+      item.cx = 2 * mid - item.cx;
+      item.sx = -item.sx;
+      item.angle = normalizeAngle(-item.angle);
+    }
   }
 
   async init(): Promise<void> {
@@ -420,6 +506,7 @@ class AppState {
     if (stored.single) this.single = { ...defaultSettings(), ...stored.single };
     if (stored.colors) this.prefs = stored.colors;
     if (stored.print) this.printSetup = { ...this.printSetup, ...stored.print };
+    this.customMaterials = loadMaterials();
     const [info, machines] = await Promise.all([backend.appInfo(), backend.machines()]);
     this.info = info;
     this.machines = machines;
@@ -571,7 +658,7 @@ class AppState {
       }
     }
     const cut: ItemCut = design.image && this.printMode ? { kind: 'contour', offsetMm: 2 } : { kind: 'lines', outerOnly: false, hidden: [] };
-    const item: Item = { id: nextItemId++, design: design.id, cx, cy, angle: 0, sx: k, sy: k, cut, print: !!design.printable };
+    const item: Item = { id: nextItemId++, design: design.id, cx, cy, angle: 0, sx: this.mirrored ? -k : k, sy: k, cut, print: !!design.printable, weed: null };
     this.items.push(item);
     this.selected = item.id;
     for (const w of design.warnings) this.toast(`${design.name}: ${w}`, 'info');
@@ -656,6 +743,161 @@ class AppState {
       if (path) this.toast(t('print.saved', { path }), 'info');
     } catch (e) {
       this.toast(errorText(e));
+    }
+  }
+
+  /** Weeding aids for the selected design, or none. */
+  setWeed(weed: WeedRequest | null): void {
+    const item = this.selectedItem;
+    if (!item) return;
+    this.checkpoint();
+    item.weed = weed;
+  }
+
+  /** The area designs may go in: inside the marks in print and cut, else the cutting area. */
+  private placeArea(): Box {
+    const m = this.marks;
+    if (m) {
+      const clear = MARK.bracket + MARK.clearance;
+      return { x0: m.left + MARK.square + MARK.clearance, y0: m.top + MARK.square + MARK.clearance, x1: m.right - MARK.clearance, y1: m.bottom - clear };
+    }
+    // A millimetre from the edges: the exact outline may reach a hair beyond the hull it is measured by.
+    return { x0: 1, y0: 1, x1: this.area.w - 1, y1: this.mat?.id === 'none' ? Infinity : this.area.h - 1 };
+  }
+
+  /** The box an item takes, its weeding box included. */
+  private takenBox(item: Item): Box | null {
+    const design = this.designs[item.design];
+    if (!design) return null;
+    const b = placedBox(item, design);
+    const m = item.weed ? item.weed.marginMm : 0;
+    return { x0: b.x0 - m, y0: b.y0 - m, x1: b.x1 + m, y1: b.y1 + m };
+  }
+
+  /**
+   * Arranges all designs to use little material: in rows from the top left, the tallest first,
+   * smaller ones filling the gaps rows leave, turned a quarter when that is the only way one fits
+   * across.
+   */
+  arrange(): void {
+    if (!this.items.length) return;
+    this.checkpoint();
+    const area = this.placeArea();
+    const gap = ARRANGE_GAP_MM;
+    const sized = this.items
+      .map((item) => ({ item, box: this.takenBox(item) }))
+      .filter((e): e is { item: Item; box: Box } => !!e.box)
+      .sort((a, b) => b.box.y1 - b.box.y0 - (a.box.y1 - a.box.y0) || b.box.x1 - b.box.x0 - (a.box.x1 - a.box.x0));
+    // First fit: every design goes into the first row with room left, else opens a new row.
+    const rows: { y: number; h: number; x: number }[] = [];
+    let overflow = false;
+    for (const { item } of sized) {
+      let box = this.takenBox(item)!;
+      if (box.x1 - box.x0 > area.x1 - area.x0) {
+        item.angle = normalizeAngle(item.angle + 90);
+        box = this.takenBox(item)!;
+      }
+      const w = box.x1 - box.x0;
+      const h = box.y1 - box.y0;
+      let row = rows.find((r) => r.x + w <= area.x1 + 1e-6 && h <= r.h + 1e-6);
+      if (!row) {
+        const last = rows[rows.length - 1];
+        row = { y: last ? last.y + last.h + gap : area.y0, h, x: area.x0 };
+        rows.push(row);
+      }
+      if (row.y + h > area.y1) overflow = true;
+      item.cx += row.x - box.x0;
+      item.cy += row.y - box.y0;
+      row.x += w + gap;
+    }
+    if (overflow) this.toast(t('arrange.overflow'));
+  }
+
+  /** A free spot for a box of `w` × `h` mm, scanning rows from the top left; `null` if none. */
+  private freeSpot(w: number, h: number, taken: Box[]): { x: number; y: number } | null {
+    const area = this.placeArea();
+    const gap = ARRANGE_GAP_MM;
+    const bottom = Number.isFinite(area.y1) ? area.y1 : area.y0 + 18000;
+    for (let y = area.y0; y + h <= bottom; y += 2) {
+      for (let x = area.x0; x + w <= area.x1; x += 2) {
+        const b = { x0: x - gap, y0: y - gap, x1: x + w + gap, y1: y + h + gap };
+        const clash = taken.find((o) => o.x1 > b.x0 && o.x0 < b.x1 && o.y1 > b.y0 && o.y0 < b.y1);
+        if (!clash) return { x, y };
+        // Jump past the box in the way.
+        x = Math.max(x, clash.x1 + gap - 2);
+      }
+    }
+    return null;
+  }
+
+  /** Puts `count` copies of the selected design in free spots. */
+  addCopies(count: number): void {
+    const item = this.selectedItem;
+    const box = item ? this.takenBox(item) : null;
+    if (!item || !box || count < 1) return;
+    this.checkpoint();
+    const taken = this.items.map((i) => this.takenBox(i)).filter((b): b is Box => !!b);
+    const w = box.x1 - box.x0;
+    const h = box.y1 - box.y0;
+    let placed = 0;
+    for (; placed < Math.min(count, 200); placed++) {
+      const spot = this.freeSpot(w, h, taken);
+      if (!spot) break;
+      const copy: Item = { ...$state.snapshot(item), id: nextItemId++, cx: item.cx + spot.x - box.x0, cy: item.cy + spot.y - box.y0 };
+      this.items.push(copy);
+      taken.push({ x0: spot.x, y0: spot.y, x1: spot.x + w, y1: spot.y + h });
+    }
+    if (placed < count) this.toast(t('arrange.copiesLeft', { n: placed }));
+  }
+
+  // Shapes and text
+
+  async loadFonts(): Promise<void> {
+    if (this.fonts) return;
+    try {
+      this.fonts = await backend.fonts();
+    } catch {
+      this.fonts = [];
+    }
+  }
+
+  openMake(kind: 'text' | 'shape'): void {
+    const spec: MadeSpec =
+      kind === 'text'
+        ? { kind: 'text', text: '', family: '', sizeMm: 25, bold: false, italic: false, align: 'center', letterSpacingMm: 0, lineHeight: 1.2 }
+        : { kind: 'shape', shape: 'rectangle', widthMm: 50, heightMm: 50, cornerMm: 0, sides: 5, inner: 0.5 };
+    this.make = { spec, itemId: null };
+    if (kind === 'text') void this.loadFonts();
+  }
+
+  editMade(): void {
+    const item = this.selectedItem;
+    const made = item ? this.designs[item.design]?.made : undefined;
+    if (!item || !made) return;
+    this.make = { spec: $state.snapshot(made), itemId: item.id };
+    if (made.kind === 'text') void this.loadFonts();
+  }
+
+  /** Puts the made design on the mat, or swaps it in for the item being changed. */
+  applyMade(design: DesignInfo): void {
+    const make = this.make;
+    this.make = null;
+    if (!make) return;
+    const item = make.itemId === null ? null : this.items.find((i) => i.id === make.itemId);
+    if (!item) {
+      void this.open(async () => [design]);
+      return;
+    }
+    this.checkpoint();
+    const old = item.design;
+    this.designs[design.id] = design;
+    item.design = design.id;
+    item.sx = Math.sign(item.sx || 1);
+    item.sy = Math.sign(item.sy || 1);
+    if (item.cut.kind === 'lines') item.cut = { ...item.cut, hidden: [] };
+    if (!this.items.some((i) => i.design === old)) {
+      delete this.designs[old];
+      void backend.forgetDesign(old);
     }
   }
 

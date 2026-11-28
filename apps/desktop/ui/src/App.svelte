@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import { app } from './lib/state.svelte';
   import { backend } from './lib/api';
+  import type { DesignInfo, MadeSpec } from './lib/api/types';
   import { setLanguage } from './lib/i18n/index.svelte';
   import TopBar from './components/TopBar.svelte';
   import MatView from './components/MatView.svelte';
@@ -14,6 +15,7 @@
   import SendDialog from './components/SendDialog.svelte';
   import Toasts from './components/Toasts.svelte';
   import UsbAccessDialog from './components/UsbAccessDialog.svelte';
+  import MakeDialog from './components/MakeDialog.svelte';
 
   let ready = $state(false);
 
@@ -39,7 +41,7 @@
     return () => unlisten?.();
   });
 
-  /** `?demo`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
+  /** `?demo`, `?shapes`, `?make=text|shape`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
   async function screenshotState(params: URLSearchParams): Promise<void> {
     if (params.has('machine')) app.setMachine(params.get('machine') as string);
     if (params.has('demo')) {
@@ -52,6 +54,26 @@
       for (const item of app.items) item.cut = { kind: 'contour', offsetMm: 3 };
       app.selected = app.items[0]?.id ?? null;
       app.centerSelected();
+    }
+    if (params.has('shapes')) {
+      // Vinyl: shapes with weeding boxes, arranged, the first one mirrored for heat transfer.
+      const specs: MadeSpec[] = [
+        { kind: 'shape', shape: 'heart', widthMm: 60, heightMm: 54, cornerMm: 0, sides: 5, inner: 0.5 },
+        { kind: 'shape', shape: 'star', widthMm: 58, heightMm: 55, cornerMm: 0, sides: 5, inner: 0.45 },
+        { kind: 'shape', shape: 'rectangle', widthMm: 80, heightMm: 30, cornerMm: 8, sides: 5, inner: 0.5 },
+        { kind: 'shape', shape: 'polygon', widthMm: 40, heightMm: 40, cornerMm: 0, sides: 6, inner: 0.5 },
+      ];
+      const name: MadeSpec = { kind: 'text', text: 'Lena', family: '', sizeMm: 40, bold: true, italic: false, align: 'center', letterSpacingMm: 0, lineHeight: 1.2 };
+      // The browser demo has no fonts: the text comes only in the desktop app.
+      const made = await Promise.all([name, ...specs].map((spec) => backend.makeDesign(spec).catch(() => null)));
+      await app.open(async () => made.filter((d): d is DesignInfo => d !== null));
+      for (const item of app.items) item.weed = { marginMm: 4, lines: true };
+      app.arrange();
+      app.selected = app.items[0]?.id ?? null;
+    }
+    if (params.has('make')) {
+      app.openMake(params.get('make') === 'text' ? 'text' : 'shape');
+      if (app.make?.spec.kind === 'shape') app.make.spec = { ...app.make.spec, shape: 'star', widthMm: 60, heightMm: 57, inner: 0.45 };
     }
     if (!app.items.length) return;
     if (params.has('preview') || params.has('send')) {
@@ -109,7 +131,7 @@
 
   function onKey(e: KeyboardEvent): void {
     const target = e.target as HTMLElement;
-    if (target.closest('input, select, textarea') || app.send || app.usbDialog) return;
+    if (target.closest('input, select, textarea') || app.send || app.usbDialog || app.make) return;
     const ctrl = e.ctrlKey || e.metaKey;
     const step = e.shiftKey ? 10 : 1;
     if (ctrl && e.key.toLowerCase() === 'o') {
@@ -174,6 +196,7 @@
 </div>
 <SendDialog />
 <UsbAccessDialog />
+<MakeDialog />
 <Toasts />
 
 <style>

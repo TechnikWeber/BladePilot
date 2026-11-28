@@ -17,7 +17,7 @@ pub mod service;
 pub mod udev;
 
 use model::{
-    ApiError, AppInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, PlanInfo, Simulation, Target,
+    ApiError, AppInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, MadeSpec, PlanInfo, Simulation, Target,
     TraceRequest, UsbAccess,
 };
 use service::Service;
@@ -95,6 +95,18 @@ async fn print_sheet(service: Shared<'_>, job: JobRequest, path: PathBuf) -> Res
 }
 
 #[tauri::command]
+async fn fonts(service: Shared<'_>) -> Result<Vec<String>, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || Ok(service.fonts())).await
+}
+
+#[tauri::command]
+async fn make_design(service: Shared<'_>, spec: MadeSpec) -> Result<DesignInfo, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.make_design(&spec)).await
+}
+
+#[tauri::command]
 fn test_design(service: Shared<'_>) -> DesignInfo {
     service.test_design()
 }
@@ -169,6 +181,8 @@ pub fn run() {
             open_design,
             import_design,
             test_design,
+            fonts,
+            make_design,
             trace_design,
             contour_path,
             print_sheet,

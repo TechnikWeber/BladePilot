@@ -7,9 +7,18 @@
 
 pub use kurbo;
 use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape as _};
+pub use usvg::fontdb as usvg_fontdb;
 
+pub mod dxf;
+pub mod make;
+pub mod pdf;
 pub mod raster;
+pub mod weed;
+pub use dxf::import_dxf;
+pub use make::{ShapeKind, ShapeSpec, TextAlign, TextSpec, font_families, make_shape, make_text, system_fonts};
+pub use pdf::import_pdf;
 pub use raster::{Raster, TraceSettings, TraceSource, contour, decode_image, import_image, trace_raster};
+pub use weed::{WeedSpec, weed_lines};
 
 /// Millimetres per CSS pixel: SVG user units are 1/96 in.
 pub const MM_PER_PX: f64 = 25.4 / 96.0;
@@ -64,6 +73,12 @@ pub enum Format {
     Studio3,
     /// A picture (PNG, JPEG, WebP, BMP, GIF).
     Image,
+    /// A DXF drawing.
+    Dxf,
+    /// The first page of a PDF.
+    Pdf,
+    /// A shape or a text made in BladePilot.
+    Made,
 }
 
 impl Format {
@@ -73,6 +88,9 @@ impl Format {
             Format::Studio => "Silhouette Studio (.studio)",
             Format::Studio3 => "Silhouette Studio (.studio3)",
             Format::Image => "Picture",
+            Format::Dxf => "DXF",
+            Format::Pdf => "PDF",
+            Format::Made => "BladePilot",
         }
     }
 }
@@ -164,7 +182,7 @@ impl Design {
 /// Why a file could not be opened.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("not an SVG, Silhouette Studio or picture file")]
+    #[error("not an SVG, PDF, DXF, Silhouette Studio or picture file")]
     UnknownFormat,
     #[error("SVG: {0}")]
     Svg(#[from] usvg::Error),
@@ -172,12 +190,25 @@ pub enum Error {
     Studio(#[from] craft_silhouette_studio::Error),
     #[error("picture: {0}")]
     Image(String),
+    #[error("DXF: {0}")]
+    Dxf(String),
+    #[error("PDF: {0}")]
+    Pdf(String),
+    #[error("text: {0}")]
+    Text(String),
 }
 
 /// Opens a design by content; `name` (a file name) only breaks ties.
 pub fn import(bytes: &[u8], name: Option<&str>) -> Result<Design, Error> {
     if raster::sniff_image(bytes) {
         return import_image(bytes);
+    }
+    let lower = name.map(str::to_ascii_lowercase);
+    if pdf::sniff(bytes) {
+        return import_pdf(bytes);
+    }
+    if dxf::sniff(bytes) || lower.as_deref().is_some_and(|n| n.ends_with(".dxf")) {
+        return import_dxf(bytes);
     }
     if craft_silhouette_studio::sniff(bytes).is_some() || name.is_some_and(craft_silhouette_studio::is_studio_path) {
         return import_studio(bytes);
@@ -208,7 +239,12 @@ pub fn import_svg(bytes: &[u8]) -> Result<Design, Error> {
     if compressed || bytes.windows(5).any(|w| w == b"<text") {
         options.fontdb_mut().load_system_fonts();
     }
-    let tree = usvg::Tree::from_data(bytes, &options)?;
+    import_svg_with(bytes, &options)
+}
+
+/// Reads an SVG document with these options (fonts, mostly).
+pub fn import_svg_with(bytes: &[u8], options: &usvg::Options) -> Result<Design, Error> {
+    let tree = usvg::Tree::from_data(bytes, options)?;
     let size = tree.size();
     let mut design = Design {
         format: Format::Svg,
