@@ -133,19 +133,19 @@ Pick the file for your system from the [releases](https://github.com/TechnikWebe
 | Windows | `BladePilot-Desktop-…-windows-x64-setup.exe` or `.msi` |
 | macOS | `BladePilot-Desktop-…-macos-universal.dmg`; the first time, open it with right-click, **Open** |
 
-**Command line:**
+**Command line** (`bladepilot`, for scripts, a Raspberry Pi without a desktop, or capturing USB
+traffic): the desktop app's `.rpm` and `.deb` packages install it as well. On its own:
 
 | System | File | Start |
 |---|---|---|
-| Any Linux | `bladepilot-cli-…-x86_64.AppImage` (or `aarch64`) | `chmod +x bladepilot-cli-*.AppImage`, then run it in a terminal |
-| Fedora, openSUSE | `bladepilot-….x86_64.rpm` | `sudo dnf install ./bladepilot-*.rpm` |
-| Debian, Ubuntu, Raspberry Pi OS | `bladepilot_…_amd64.deb` (or `arm64`) | `sudo apt install ./bladepilot_*.deb` |
+| Any Linux | `bladepilot-cli-…-linux-x86_64.tar.gz` (or `aarch64`) | unpack, run `./bladepilot` in a terminal |
 | Windows | `bladepilot-cli-…-windows-x86_64.exe` (or `arm64`) | run it from a terminal |
 | macOS | `bladepilot-cli-…-macos-universal.tar.gz` | unpack, `xattr -d com.apple.quarantine bladepilot` |
 
 The `.rpm` and `.deb` packages also install the udev rule that gives you access to the machine
 over USB; the AppImage offers to set it up at its first start (it asks for your password) or
-shows the command to paste into a terminal. Windows and macOS warn about an unknown developer,
+shows the command to paste into a terminal. Install the AppImage with an AppImage manager such as
+Gear Lever, and it finds new releases by itself. Windows and macOS warn about an unknown developer,
 because the files are not signed.
 With Smart App Control switched on, Windows may block a new release outright until it has built
 up a reputation; signed builds are on the roadmap.

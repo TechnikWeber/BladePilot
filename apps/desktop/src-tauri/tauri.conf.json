@@ -42,7 +42,7 @@
     ],
     "category": "GraphicsAndDesign",
     "shortDescription": "Cutting software for Silhouette Portrait and Cameo machines",
-    "longDescription": "Open SVG and Silhouette Studio files, place them on the mat and cut them on Silhouette Portrait and Cameo machines, or watch the virtual plotter cut them first.",
+    "longDescription": "Open SVG, PDF, DXF and Silhouette Studio files or pictures, write text or draw shapes, place them on the mat and cut them on Silhouette Portrait and Cameo machines, or watch the virtual plotter cut them first. Includes the bladepilot command line on Linux.",
     "publisher": "TechnikWeber",
     "copyright": "Copyright (c) 2026 Philipp Weber",
     "homepage": "https://github.com/TechnikWeber/BladePilot",
@@ -51,15 +51,32 @@
     "linux": {
       "deb": {
         "files": {
-          "/usr/lib/udev/rules.d/70-bladepilot-desktop.rules": "../../../packaging/linux/70-bladepilot.rules"
+          "/usr/lib/udev/rules.d/70-bladepilot-desktop.rules": "../../../packaging/linux/70-bladepilot.rules",
+          "/usr/bin/bladepilot": "../../../target/release/bladepilot"
         },
-        "postInstallScript": "../../../packaging/linux/postinstall.sh"
+        "postInstallScript": "../../../packaging/linux/postinstall.sh",
+        "provides": [
+          "bladepilot"
+        ],
+        "replaces": [
+          "bladepilot"
+        ],
+        "conflicts": [
+          "bladepilot"
+        ]
       },
       "rpm": {
         "files": {
-          "/usr/lib/udev/rules.d/70-bladepilot-desktop.rules": "../../../packaging/linux/70-bladepilot.rules"
+          "/usr/lib/udev/rules.d/70-bladepilot-desktop.rules": "../../../packaging/linux/70-bladepilot.rules",
+          "/usr/bin/bladepilot": "../../../target/release/bladepilot"
         },
-        "postInstallScript": "../../../packaging/linux/postinstall.sh"
+        "postInstallScript": "../../../packaging/linux/postinstall.sh",
+        "provides": [
+          "bladepilot"
+        ],
+        "obsoletes": [
+          "bladepilot"
+        ]
       }
     },
     "macOS": {

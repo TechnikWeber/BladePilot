@@ -33,8 +33,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-musl, arch: x86_64, nfpm_arch: amd64, nfpm_asset: Linux_x86_64 }
-          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, arch: aarch64, nfpm_arch: arm64, nfpm_asset: Linux_arm64 }
+          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-musl, arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, arch: aarch64 }
     runs-on: ${{ matrix.runner }}
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -49,10 +49,6 @@ jobs:
       - name: Tools
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q musl-tools file
-          mkdir -p "$HOME/.local/bin" && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v2.49.0/nfpm_2.49.0_${{ matrix.nfpm_asset }}.tar.gz" | tar -xz -C "$HOME/.local/bin" nfpm
-          curl -fsSL -o "$HOME/.local/bin/appimagetool" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage"
-          chmod +x "$HOME/.local/bin/appimagetool"
       - name: Build (static, runs on any distribution)
         run: cargo build --release --locked -p bladepilot-cli --target ${{ matrix.target }}
       - name: Smoke test
@@ -60,7 +56,7 @@ jobs:
           target/${{ matrix.target }}/release/bladepilot --version
           target/${{ matrix.target }}/release/bladepilot cut hardware-tests/T3-label.svg --simulate /tmp/t3.svg
       - name: Package
-        run: packaging/linux/package.sh ${{ matrix.target }} ${{ matrix.arch }} ${{ matrix.nfpm_arch }}
+        run: packaging/linux/package.sh ${{ matrix.target }} ${{ matrix.arch }}
       - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
@@ -99,7 +95,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path "dist/$name", "dist/out" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/bladepilot.exe" "dist/$name/"
           Copy-Item README.md, LICENSE "dist/$name/"
-          Compress-Archive -Path "dist/$name/*" -DestinationPath "dist/out/$name.zip"
           Copy-Item "target/${{ matrix.target }}/release/bladepilot.exe" "dist/out/$name.exe"
       - uses: actions/upload-artifact@v7
         with:
@@ -169,6 +164,9 @@ jobs:
           mkdir -p "$HOME/.local/bin" && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           curl -fsSL -o "$HOME/.local/bin/appimagetool" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage"
           chmod +x "$HOME/.local/bin/appimagetool"
+      - name: Command line for the deb and rpm packages (Linux)
+        if: matrix.platform == 'linux'
+        run: cargo build --release --locked -p bladepilot-cli
       - name: Front end
         working-directory: apps/desktop/ui
         run: npm ci
@@ -231,8 +229,22 @@ jobs:
       - name: Checksums and notes
         run: |
           (cd dist && sha256sum * > SHA256SUMS.txt)
-          awk -v v="$VERSION" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
-          test -s notes.md || echo "BladePilot $VERSION" > notes.md
+          base="https://github.com/TechnikWeber/BladePilot/releases/download/$GITHUB_REF_NAME"
+          {
+            echo "### Which file do I need?"
+            echo
+            echo "| System | Desktop app |"
+            echo "|---|---|"
+            echo "| Linux, any distribution | [BladePilot-Desktop-$VERSION-x86_64.AppImage]($base/BladePilot-Desktop-$VERSION-x86_64.AppImage) · [aarch64]($base/BladePilot-Desktop-$VERSION-aarch64.AppImage) |"
+            echo "| Fedora, openSUSE | [bladepilot-desktop-$VERSION-1.x86_64.rpm]($base/bladepilot-desktop-$VERSION-1.x86_64.rpm) · [aarch64]($base/bladepilot-desktop-$VERSION-1.aarch64.rpm) |"
+            echo "| Debian, Ubuntu, Raspberry Pi OS | [bladepilot-desktop_${VERSION}_amd64.deb]($base/bladepilot-desktop_${VERSION}_amd64.deb) · [arm64]($base/bladepilot-desktop_${VERSION}_arm64.deb) |"
+            echo "| Windows | [BladePilot-Desktop-$VERSION-windows-x64-setup.exe]($base/BladePilot-Desktop-$VERSION-windows-x64-setup.exe) · [msi]($base/BladePilot-Desktop-$VERSION-windows-x64.msi) |"
+            echo "| macOS | [BladePilot-Desktop-$VERSION-macos-universal.dmg]($base/BladePilot-Desktop-$VERSION-macos-universal.dmg) |"
+            echo
+            echo "The command line \`bladepilot\` comes with the deb and rpm packages. On its own (servers, a Raspberry Pi without a desktop, scripts) it is in the \`bladepilot-cli-…\` files below."
+            echo
+            awk -v v="$VERSION" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md
+          } > notes.md
       - name: Publish
         run: |
           # Only versions with a suffix (1.0.0-rc.1) are pre-releases: the newest 0.x release has to
