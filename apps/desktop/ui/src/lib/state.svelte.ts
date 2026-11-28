@@ -161,6 +161,11 @@ export interface TestCut {
 
 /** Edge of the test pattern, mm (as `bladepilot_job::TEST_SIZE_MM`). */
 export const TEST_SIZE_MM = 12;
+/** Distance of the first test from the edges of the cutting area, mm: well inside the mat's grid. */
+export const TEST_MARGIN_MM = 15;
+
+/** The corner the test cuts start in: top or bottom, left or right. */
+export type TestCorner = 'tl' | 'tr' | 'bl' | 'br';
 
 export interface Toast {
   id: number;
@@ -189,6 +194,7 @@ export function colorKey(color: string | null): string {
 
 interface StoredPrefs {
   print?: PrintSetup;
+  testCorner?: TestCorner;
   machineId?: string;
   matId?: string;
   unit?: 'mm' | 'in';
@@ -266,6 +272,8 @@ class AppState {
   preview = $state<PreviewState | null>(null);
   send = $state<SendState | null>(null);
   test = $state<TestCut | null>(null);
+  /** Where test cuts start; the next one goes beside it, away from that corner. */
+  testCorner = $state<TestCorner>('tr');
   testDesign = $state<DesignInfo | null>(null);
   /** Test cuts already made this session: the next one goes elsewhere. */
   private testSpots: { x: number; y: number }[] = [];
@@ -506,6 +514,7 @@ class AppState {
     if (stored.single) this.single = { ...defaultSettings(), ...stored.single };
     if (stored.colors) this.prefs = stored.colors;
     if (stored.print) this.printSetup = { ...this.printSetup, ...stored.print };
+    if (stored.testCorner && ['tl', 'tr', 'bl', 'br'].includes(stored.testCorner)) this.testCorner = stored.testCorner;
     this.customMaterials = loadMaterials();
     const [info, machines] = await Promise.all([backend.appInfo(), backend.machines()]);
     this.info = info;
@@ -553,6 +562,7 @@ class AppState {
       single: $state.snapshot(this.single),
       colors: $state.snapshot(this.prefs),
       print: $state.snapshot(this.printSetup),
+      testCorner: this.testCorner,
     };
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify(data));
@@ -564,8 +574,11 @@ class AppState {
   setMachine(id: string): void {
     const machine = this.machines.find((m) => m.id === id);
     if (!machine) return;
+    // Another model starts on its own standard mat (the Portrait 4's is 8.5 × 12 in, not the
+    // Portrait 3's 8 × 12 it also takes).
+    const changed = id !== this.machineId;
     this.machineId = id;
-    if (!machine.mats.some((m) => m.id === this.matId)) this.matId = machine.defaultMat;
+    if (changed || !machine.mats.some((m) => m.id === this.matId)) this.matId = machine.defaultMat;
     this.status = null;
     this.statusError = null;
     this.fitRequest++;
@@ -1005,8 +1018,12 @@ class AppState {
     this.scanning = true;
     try {
       const usb = await backend.scanDevices();
+      const before = this.device;
       this.devices = [...usb, ...this.devices.filter((d) => d.bluetooth)];
-      if (this.target !== 'virtual' && !this.devices.some((d) => deviceKey(d) === this.target)) this.target = 'virtual';
+      if (this.target !== 'virtual' && !this.devices.some((d) => deviceKey(d) === this.target)) {
+        this.target = 'virtual';
+        if (before) this.toast(t('machine.lost', { name: before.name }), 'info');
+      }
     } catch (e) {
       this.devices = this.devices.filter((d) => d.bluetooth);
       if (!backend.mock) this.toast(errorText(e));
@@ -1084,22 +1101,44 @@ class AppState {
 
   // Test cut
 
-  /** A free 12 mm spot inside the cutting area, from the top right, clear of designs and earlier tests. */
+  /**
+   * A free 12 mm spot for a test cut: from the chosen corner, 15 mm inside the cutting area, along
+   * the edge away from that corner, then the next row towards the middle; clear of designs and
+   * earlier tests.
+   */
   freeTestSpot(): { x: number; y: number } {
     const size = TEST_SIZE_MM;
     const gap = 4;
+    const margin = TEST_MARGIN_MM;
     const area = this.area;
+    const right = this.testCorner.endsWith('r');
+    const bottom = this.testCorner.startsWith('b');
     const taken: Box[] = [
       ...Object.values(this.boxes),
       ...this.testSpots.map((p) => ({ x0: p.x, y0: p.y, x1: p.x + size, y1: p.y + size })),
     ];
-    for (let y = gap; y + size <= area.h - gap; y += size + gap) {
-      for (let x = area.w - size - gap; x >= gap; x -= size + gap) {
+    const columns = Math.max(1, Math.floor((area.w - 2 * margin + gap) / (size + gap)));
+    const rows = Math.max(1, Math.floor((area.h - 2 * margin + gap) / (size + gap)));
+    for (let j = 0; j < rows; j++) {
+      const y = bottom ? area.h - margin - size - j * (size + gap) : margin + j * (size + gap);
+      for (let k = 0; k < columns; k++) {
+        const x = right ? area.w - margin - size - k * (size + gap) : margin + k * (size + gap);
         const b = { x0: x - 2, y0: y - 2, x1: x + size + 2, y1: y + size + 2 };
         if (taken.every((o) => o.x1 <= b.x0 || o.x0 >= b.x1 || o.y1 <= b.y0 || o.y0 >= b.y1)) return { x, y };
       }
     }
-    return { x: gap, y: gap };
+    return { x: right ? area.w - margin - size : margin, y: bottom ? area.h - margin - size : margin };
+  }
+
+  /** Test cuts start in another corner from now on; the open test moves there. */
+  setTestCorner(corner: TestCorner): void {
+    this.testCorner = corner;
+    this.savePrefs();
+    if (!this.test) return;
+    const spot = this.freeTestSpot();
+    this.test.x = spot.x;
+    this.test.y = spot.y;
+    void this.planTest();
   }
 
   /** Opens the send dialog for a test cut with these settings. */

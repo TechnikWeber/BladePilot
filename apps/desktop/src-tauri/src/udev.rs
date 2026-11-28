@@ -61,7 +61,7 @@ pub fn install() -> Result<(), ApiError> {
     if !cfg!(target_os = "linux") {
         return Ok(());
     }
-    let output = std::process::Command::new("pkexec")
+    let output = bladepilot_device::host_command("pkexec")
         .args(["sh", "-c", &script()])
         .output()
         .map_err(|e| ApiError::new("elevate", format!("pkexec could not be started: {e}")))?;

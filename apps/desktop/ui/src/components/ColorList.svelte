@@ -168,8 +168,8 @@
           {#if open === row.key && app.byColor && stored}
             <div class="body">
               <SettingsEditor settings={stored.settings} onchange={save} />
-              <button class="btn test" title={t('test.buttonHint')} onclick={() => app.openTestCut(stored.settings, row.color)}>
-                <Icon name="testCut" size={15} />{t('test.button')}
+              <button class="btn test" title={stored.settings.tool === 'pen' ? t('test.buttonPenHint') : t('test.buttonHint')} onclick={() => app.openTestCut(stored.settings, row.color)}>
+                <Icon name="testCut" size={15} />{stored.settings.tool === 'pen' ? t('test.buttonPen') : t('test.button')}
               </button>
               {#if row.passIndex > 0}
                 <label class="switch pause">
@@ -196,8 +196,8 @@
     <div class="single">
       <div class="single-title">{t('colors.all')}</div>
       <SettingsEditor settings={app.single} onchange={save} />
-      <button class="btn test" title={t('test.buttonHint')} onclick={() => app.openTestCut(app.single, null)}>
-        <Icon name="testCut" size={15} />{t('test.button')}
+      <button class="btn test" title={app.single.tool === 'pen' ? t('test.buttonPenHint') : t('test.buttonHint')} onclick={() => app.openTestCut(app.single, null)}>
+        <Icon name="testCut" size={15} />{app.single.tool === 'pen' ? t('test.buttonPen') : t('test.button')}
       </button>
     </div>
   {/if}

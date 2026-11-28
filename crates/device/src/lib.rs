@@ -42,6 +42,58 @@ pub enum Error {
     Timeout,
     #[error("the job was stopped")]
     Stopped,
+    #[error(
+        "Bluetooth: the machine is paired over Bluetooth Low Energy in the system settings; BladePilot needs classic Bluetooth: remove the pairing there and search again"
+    )]
+    BluetoothLowEnergy,
+}
+
+/// A command for a program of the system (`bluetoothctl`, `pkexec`) without what an AppImage
+/// sets for its own libraries: its `LD_LIBRARY_PATH` and the other paths into the mounted image
+/// make system programs load the wrong libraries (`bluetoothctl` then fails with an undefined
+/// symbol). Outside an AppImage the environment stays as it is.
+pub fn host_command(program: &str) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    let Some(appdir) = std::env::var("APPDIR").ok().filter(|d| !d.is_empty()) else { return command };
+    let vars: Vec<(String, String)> =
+        std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())).collect();
+    for (key, value) in outside_image(&vars, &appdir) {
+        match value {
+            Some(v) => command.env(key, v),
+            None => command.env_remove(key),
+        };
+    }
+    command
+}
+
+/// The variables whose value points into the image at `appdir`, each with the value left
+/// without those paths (`None`: nothing is left, drop the variable).
+fn outside_image(vars: &[(String, String)], appdir: &str) -> Vec<(String, Option<String>)> {
+    let appdir = appdir.trim_end_matches('/');
+    vars.iter()
+        .filter(|(_, v)| v.contains(appdir))
+        .map(|(k, v)| {
+            let kept: Vec<&str> = v.split(':').filter(|part| !part.is_empty() && !part.starts_with(appdir)).collect();
+            (k.clone(), (!kept.is_empty()).then(|| kept.join(":")))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod host_tests {
+    use super::outside_image;
+
+    #[test]
+    fn paths_into_the_image_are_left_out_of_system_programs() {
+        let vars = [
+            ("LD_LIBRARY_PATH", "/tmp/.mount_x/usr/lib/:/tmp/.mount_x/usr/lib/x86_64-linux-gnu/"),
+            ("XDG_DATA_DIRS", "/tmp/.mount_x/usr/share:/usr/share:/usr/local/share"),
+            ("HOME", "/home/someone"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()));
+        let out = outside_image(&vars, "/tmp/.mount_x/");
+        assert_eq!(out, [("LD_LIBRARY_PATH".to_string(), None), ("XDG_DATA_DIRS".to_string(), Some("/usr/share:/usr/local/share".to_string()))]);
+    }
 }
 
 /// Moves bytes to a machine and back.

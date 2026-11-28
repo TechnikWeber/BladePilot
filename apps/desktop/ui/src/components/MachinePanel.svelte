@@ -96,8 +96,12 @@
   <div class="status">
     <span class="dot {statusKind}"></span>
     <span class="status-text">{statusText}</span>
-    {#if app.status?.version}<span class="version" title={app.status.version}>{app.status.version}</span>{/if}
-    {#if toolText}<span class="chip">{toolText}</span>{/if}
+    {#if found}
+      {#if app.status?.version}<span class="version" title={app.status.version}>{app.status.version}</span>{/if}
+      {#if toolText}<span class="chip">{toolText}</span>{/if}
+    {:else if app.status}
+      <span class="chip virtual" title={t('machine.simulatedHint')}>{t('machine.simulated')}</span>
+    {/if}
     <button class="icon-btn sm" title={t('machine.refresh')} disabled={app.checking} onclick={() => app.checkStatus()}><Icon name="refresh" size={14} /></button>
   </div>
   {#if app.usb?.needed && !app.usb.installed}
@@ -187,6 +191,12 @@
     font-size: 11px;
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  .chip.virtual {
+    background: var(--panel-2);
+    color: var(--text-2);
+    border: 1px solid var(--border);
   }
 
   .dot {

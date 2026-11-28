@@ -1,7 +1,7 @@
 <script lang="ts">
   // Sending a job: choose where to, check the passes, then follow the machine: progress, pauses
   // for tool changes, pause and stop. The job runs on the Rust side; this only shows it.
-  import { app, deviceKey } from '../lib/state.svelte';
+  import { app, deviceKey, type TestCorner } from '../lib/state.svelte';
   import { t, errorText } from '../lib/i18n/index.svelte';
   import { displayColor } from '../lib/theme.svelte';
   import { fmtLength } from '../lib/format';
@@ -20,6 +20,14 @@
   const percent = $derived(s && s.total > 0 ? Math.min(100, (s.sent / s.total) * 100) : 0);
   const passes = $derived(plan?.passes ?? []);
   const current = $derived(s && passes[s.pass] ? passes[s.pass] : null);
+  /** Only pens: the job draws, it does not cut. */
+  const drawing = $derived(testing ? app.test?.settings.tool === 'pen' : passes.length > 0 && passes.every((p) => p.settings.tool === 'pen'));
+  const CORNERS: { id: TestCorner; arrow: string; key: 'test.cornerTl' | 'test.cornerTr' | 'test.cornerBl' | 'test.cornerBr' }[] = [
+    { id: 'tl', arrow: '↖', key: 'test.cornerTl' },
+    { id: 'tr', arrow: '↗', key: 'test.cornerTr' },
+    { id: 'bl', arrow: '↙', key: 'test.cornerBl' },
+    { id: 'br', arrow: '↘', key: 'test.cornerBr' },
+  ];
 
   function toolName(p: PassInfo | Settings): string {
     const tool = 'settings' in p ? p.settings.tool : p.tool;
@@ -51,7 +59,7 @@
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="send-title">
       <header>
         <div class="title-icon"><Icon name={testing ? 'testCut' : 'send'} size={18} /></div>
-        <h2 id="send-title">{testing ? t('test.title') : t('send.title')}</h2>
+        <h2 id="send-title">{testing ? (drawing ? t('test.titlePen') : t('test.title')) : t('send.title')}</h2>
         {#if !running}
           <button class="icon-btn" aria-label={t('send.close')} onclick={() => app.closeSend()}><Icon name="close" /></button>
         {/if}
@@ -60,7 +68,7 @@
       {#if s.phase === 'setup'}
         <div class="content">
           {#if testing && app.test}
-            <p class="lead">{t('test.body')}</p>
+            <p class="lead">{drawing ? t('test.bodyPen') : t('test.body')}</p>
             <div class="label">{t('test.settings')}</div>
             <div class="test-settings">
               <span class="swatch" class:none={!app.test.color} style={app.test.color ? `background: ${displayColor(app.test.color)}` : ''}></span>
@@ -69,6 +77,14 @@
               <span class="p-details">{details(app.test.settings)}</span>
             </div>
             <div class="label summary-label">{t('test.position')}</div>
+            <div class="corners" role="group" aria-label={t('test.corner')}>
+              <span class="hint">{t('test.corner')}</span>
+              <div class="segmented">
+                {#each CORNERS as c (c.id)}
+                  <button class:on={app.testCorner === c.id} title={t(c.key)} aria-label={t(c.key)} onclick={() => app.setTestCorner(c.id)}>{c.arrow}</button>
+                {/each}
+              </div>
+            </div>
             <div class="test-pos">
               <NumberField label="X" value={toUnit(app.test.x)} digits={1} unit={unitLabel()} onchange={(v) => app.moveTest(v === null ? null : fromUnit(v), null)} />
               <NumberField label="Y" value={toUnit(app.test.y)} digits={1} unit={unitLabel()} onchange={(v) => app.moveTest(null, v === null ? null : fromUnit(v))} />
@@ -138,7 +154,7 @@
         </div>
         <footer>
           <button class="btn" onclick={() => app.closeSend()}>{t('send.cancel')}</button>
-          <button class="btn primary lg" disabled={!canStart} onclick={() => app.startSend()}><Icon name="play" size={14} />{testing ? t('test.start') : t('send.start')}</button>
+          <button class="btn primary lg" disabled={!canStart} onclick={() => app.startSend()}><Icon name="play" size={14} />{testing ? (drawing ? t('test.startPen') : t('test.start')) : t('send.start')}</button>
         </footer>
       {:else}
         <div class="content running">
@@ -146,7 +162,7 @@
             <div class="result {s.phase}">
               <div class="r-icon"><Icon name={s.phase === 'done' ? 'check' : s.phase === 'stopped' ? 'stop' : 'alert'} size={26} /></div>
               <h3>{s.phase === 'done' ? t('send.done') : s.phase === 'stopped' ? t('send.stopped') : t('send.failed')}</h3>
-              <p>{s.phase === 'done' ? (testing ? t('test.doneBody') : t('send.doneBody')) : s.phase === 'stopped' ? t('send.stoppedBody') : errorText(s.error)}</p>
+              <p>{s.phase === 'done' ? (testing ? (drawing ? t('test.doneBodyPen') : t('test.doneBody')) : drawing ? t('send.doneBodyPen') : t('send.doneBody')) : s.phase === 'stopped' ? t('send.stoppedBody') : errorText(s.error)}</p>
             </div>
           {:else if s.phase === 'paused' && s.pausedBefore !== null && current}
             <div class="change">
@@ -207,7 +223,7 @@
             {#if testing}
               <button class="btn" onclick={() => { app.nextTestSpot(); void app.startSend(); }}><Icon name="testCut" size={15} />{t('test.again')}</button>
             {:else}
-              <button class="btn" onclick={() => app.startSend()}><Icon name="restart" size={15} />{t('send.again')}</button>
+              <button class="btn" onclick={() => app.startSend()}><Icon name="restart" size={15} />{drawing ? t('send.againPen') : t('send.again')}</button>
             {/if}
             <span class="spacer"></span>
             <button class="btn primary" onclick={() => app.closeSend()}>{t('send.close')}</button>
@@ -250,6 +266,20 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     font-size: 12.5px;
+  }
+
+  .corners {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .corners .segmented button {
+    min-width: 34px;
+    justify-content: center;
+    font-size: 15px;
   }
 
   .test-pos {

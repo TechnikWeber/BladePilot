@@ -512,6 +512,7 @@ impl From<bladepilot_device::Error> for ApiError {
             E::UnknownStatus(_) => "unknownStatus",
             E::Timeout => "timeout",
             E::Stopped => "stopped",
+            E::BluetoothLowEnergy => "bluetoothLe",
         };
         ApiError::new(code, e.to_string())
     }

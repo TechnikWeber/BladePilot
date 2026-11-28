@@ -85,6 +85,10 @@ fn looks_like_a_machine(name: &str) -> bool {
 
 /// Searches for cutting machines in Bluetooth range. This takes about ten seconds. The machine's
 /// blue Bluetooth light has to be on (blinking: ready).
+///
+/// The Portrait 4 also announces itself over Bluetooth Low Energy, under a second (random)
+/// address and the same name. That side carries no RFCOMM, so it is left out; when a machine is
+/// known only that way (the system's Bluetooth settings paired it over LE), the search says so.
 pub fn scan() -> Result<Vec<Found>, Error> {
     let mut found: Vec<Found> = sys::inquiry()?
         .into_iter()
@@ -93,7 +97,11 @@ pub fn scan() -> Result<Vec<Found>, Error> {
         .collect();
     found.sort_by_key(|f| f.address.0);
     found.dedup_by_key(|f| f.address);
-    Ok(found)
+    let (low_energy, classic): (Vec<Found>, Vec<Found>) = found.into_iter().partition(|f| sys::is_low_energy(f.address));
+    if classic.is_empty() && !low_energy.is_empty() {
+        return Err(Error::BluetoothLowEnergy);
+    }
+    Ok(classic)
 }
 
 /// Connects to the machine at `address` on [`CHANNEL`], trying for up to [`CONNECT_PATIENCE`],
@@ -337,6 +345,11 @@ mod sys {
         }
         Ok(found)
     }
+
+    /// The Winsock inquiry finds classic devices only.
+    pub fn is_low_energy(_address: Address) -> bool {
+        false
+    }
 }
 
 /// Linux: a BlueZ RFCOMM socket; devices are found with `bluetoothctl`.
@@ -347,10 +360,10 @@ mod sys {
     use std::io::{Read, Write};
     use std::os::fd::{FromRawFd, OwnedFd};
     use std::os::unix::net::UnixStream;
-    use std::process::Command;
     use std::time::Duration;
 
     use super::Address;
+    use crate::host_command;
 
     const AF_BLUETOOTH: c_int = 31;
     const SOCK_STREAM: c_int = 1;
@@ -420,9 +433,21 @@ mod sys {
     /// Devices in range, through `bluetoothctl`: a ten-second scan, then the list it knows.
     pub fn inquiry() -> Result<Vec<(Address, String)>, crate::Error> {
         let missing = |e: std::io::Error| crate::Error::Bluetooth(format!("bluetoothctl is needed to search (BlueZ): {e}"));
-        Command::new("bluetoothctl").args(["--timeout", "10", "scan", "on"]).output().map_err(missing)?;
-        let out = Command::new("bluetoothctl").arg("devices").output().map_err(missing)?;
+        host_command("bluetoothctl").args(["--timeout", "10", "scan", "on"]).output().map_err(missing)?;
+        let out = host_command("bluetoothctl").arg("devices").output().map_err(missing)?;
+        if !out.status.success() {
+            let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Err(crate::Error::Bluetooth(format!("bluetoothctl failed: {why}")));
+        }
         Ok(parse_devices(&String::from_utf8_lossy(&out.stdout)))
+    }
+
+    /// Is this a Bluetooth Low Energy address? `bluetoothctl info` marks those `(random)`.
+    pub fn is_low_energy(address: Address) -> bool {
+        host_command("bluetoothctl")
+            .args(["info", &address.to_string()])
+            .output()
+            .is_ok_and(|out| String::from_utf8_lossy(&out.stdout).lines().next().is_some_and(|l| l.contains("(random)")))
     }
 
     /// Reads `Device 00:1B:41:CE:BB:CB Portrait 4-647221A` lines.
@@ -465,6 +490,10 @@ mod sys {
 
     pub fn inquiry() -> Result<Vec<(Address, String)>, crate::Error> {
         Err(crate::Error::Bluetooth(NOT_YET.to_string()))
+    }
+
+    pub fn is_low_energy(_address: Address) -> bool {
+        false
     }
 }
 

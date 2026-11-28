@@ -365,9 +365,22 @@ fn operation(pass: &Pass) -> Operation {
 }
 
 /// The machine program for a plan.
+///
+/// On a mat the job ends back at its origin. The encoder parks below the cut and makes that the
+/// new origin (`SO0`): right for roll media, where the next job starts below the last one, but on
+/// a mat every later job would land lower by the depth of the one before (seen on a Portrait 4,
+/// until the mat is loaded again).
 pub fn encode(plan: &Plan) -> Result<Program, Error> {
     let job = Job { operations: plan.passes.iter().map(operation).collect(), registration: plan.registration, ..Job::default() };
-    Ok(silhouette::encode(&setup(plan.machine, plan.mat), &job)?)
+    let mut program = silhouette::encode(&setup(plan.machine, plan.mat), &job)?;
+    if plan.mat != Mat::None && matches!(program.commands.last(), Some(Command::Origin)) {
+        program.commands.pop();
+        if let Some(Command::Move { down_mm, right_mm }) = program.commands.last_mut() {
+            *down_mm = 0.0;
+            *right_mm = 0.0;
+        }
+    }
+    Ok(program)
 }
 
 /// Where each pass of `plan` begins in its `program`: the index of the pass's first set-up
@@ -560,6 +573,18 @@ mod tests {
 
     fn colors(plan: &Plan) -> Vec<Option<Rgb>> {
         plan.passes.iter().map(|p| p.color).collect()
+    }
+
+    #[test]
+    fn a_job_on_a_mat_ends_at_its_origin_and_on_roll_media_below_the_cut() {
+        let design = Design { shapes: vec![sq(10.0, 60.0, 20.0, BLACK)], ..Design::default() };
+        let mut spec = JobSpec::new(bladepilot_machines::by_id("portrait4").unwrap());
+        let mat = encode(&plan(&design, &spec).unwrap()).unwrap().transcript();
+        assert_eq!(mat.last().map(String::as_str), Some("M0,0"), "{mat:?}");
+        assert!(!mat.iter().any(|c| c == "SO0"), "no new origin on a mat: {mat:?}");
+        spec.mat = Mat::None;
+        let roll = encode(&plan(&design, &spec).unwrap()).unwrap().transcript();
+        assert_eq!(roll[roll.len() - 2..], ["M1600,0".to_string(), "SO0".to_string()], "the next job starts below this one");
     }
 
     #[test]
