@@ -78,12 +78,61 @@
     return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale };
   }
 
+  /** How much a wheel step zooms; a pinch in Chromium comes as a wheel with Ctrl and small steps. */
+  function wheelFactor(e: WheelEvent): number {
+    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    return Math.exp(-delta * (e.ctrlKey && Math.abs(delta) < 50 ? 0.01 : 0.0018));
+  }
+
   function onWheel(e: WheelEvent): void {
     e.preventDefault();
     const rect = svgEl?.getBoundingClientRect();
-    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-    app.zoomBy(Math.exp(-delta * 0.0018), e.clientX - (rect?.left ?? 0), e.clientY - (rect?.top ?? 0));
+    app.zoomBy(wheelFactor(e), e.clientX - (rect?.left ?? 0), e.clientY - (rect?.top ?? 0));
   }
+
+  // Only the mat zooms, never the page with its toolbar and panels. The wheel listener has to be
+  // able to cancel (Svelte's onwheel is passive); Ctrl with the wheel or a pinch over the panels
+  // zooms the mat around its middle.
+  $effect(() => {
+    const el = svgEl;
+    if (!el) return;
+    const elsewhere = (e: WheelEvent) => {
+      if (!e.ctrlKey || el.contains(e.target as Node)) return;
+      e.preventDefault();
+      app.zoomBy(wheelFactor(e));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('wheel', elsewhere, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      window.removeEventListener('wheel', elsewhere);
+    };
+  });
+
+  // A touchpad pinch, which the Linux app takes from the web view: zoom around the fingers, or
+  // around the mat's middle when they are over the panels.
+  $effect(() => {
+    let start = 1;
+    let unlisten: (() => void) | null = null;
+    let gone = false;
+    void backend
+      .onPinch((p) => {
+        if (p.phase === 'begin') start = app.view.scale;
+        if (p.phase !== 'begin' && p.phase !== 'update') return;
+        const rect = svgEl?.getBoundingClientRect();
+        if (!rect) return;
+        const over = p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom;
+        app.zoomBy((start * p.scale) / app.view.scale, over ? p.x - rect.left : rect.width / 2, over ? p.y - rect.top : rect.height / 2);
+      })
+      .then((off) => {
+        if (gone) off();
+        else unlisten = off;
+      });
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  });
 
   // Grid and rulers, in the chosen unit.
   const grid = $derived.by(() => {
@@ -132,6 +181,10 @@
   }
 
   const skipped = $derived(new Set(app.rows.filter((r) => r.prefs.skip).map((r) => r.color)));
+
+  // Heat transfer vinyl: the mat shows the designs as they read, the preview as the machine cuts
+  // them (mirrored across the middle of the layout).
+  const shownMirrored = $derived(app.preview && app.mirrored && app.mirrorAxis !== null ? `matrix(-1 0 0 1 ${2 * app.mirrorAxis} 0)` : null);
 
   // Contours come from the Rust side once per design and offset.
   $effect(() => {
@@ -484,7 +537,6 @@
     {width}
     {height}
     viewBox="{-view.x / view.scale} {-view.y / view.scale} {width / view.scale} {height / view.scale}"
-    onwheel={onWheel}
     onpointerdown={onBackgroundDown}
     onpointermove={onMove}
     onpointerup={onUp}
@@ -568,7 +620,7 @@
     </g>
 
     <!-- The designs -->
-    <g class="items" class:faded={!!app.preview}>
+    <g class="items" class:faded={!!app.preview} transform={shownMirrored ?? undefined}>
       {#each app.items as item (item.id)}
         {@const design = designOf(item)}
         {#if design}
@@ -752,6 +804,16 @@
 
   {#if readout}
     <div class="readout tnum">{readout}</div>
+  {/if}
+
+  {#if app.mirrored && app.items.length && !app.send}
+    <div class="mirror-chip" class:on={!!app.preview} title={t('colors.mirrorHint')}>
+      <Icon name="mirrorH" size={14} />
+      <span>{app.preview ? t('mirror.previewOn') : t('mirror.chip')}</span>
+      {#if !app.preview && app.plan && !app.planError}
+        <button class="chip-btn" onclick={() => app.openPreview()}>{t('mirror.show')}</button>
+      {/if}
+    </div>
   {/if}
 
   {#if !app.items.length && app.machines.length && !app.send && !app.make}
@@ -1068,6 +1130,56 @@
   .selection .handle:hover,
   .selection .rotate:hover {
     fill: var(--accent);
+  }
+
+  .mirror-chip {
+    position: absolute;
+    left: 50%;
+    top: 6px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 32px);
+    padding: 3px 4px 3px 10px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--accent-line);
+    color: var(--accent);
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: var(--shadow-2);
+  }
+
+  .mirror-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mirror-chip.on {
+    padding-right: 12px;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+
+  .chip-btn {
+    height: 22px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .chip-btn:hover {
+    background: var(--accent);
+    color: var(--accent-text);
   }
 
   .readout {

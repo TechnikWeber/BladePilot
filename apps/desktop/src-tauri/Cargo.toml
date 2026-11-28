@@ -38,3 +38,6 @@ serde_json = { workspace = true }
 sys-locale = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { workspace = true }

@@ -62,7 +62,7 @@ the virtual plotter first, then checked against the real machine on a
       changeable after they are placed
 - [x] Weeding box and weeding lines per design, a pass of their own cut last
 - [x] Copies into free spots; arrange all designs onto little material (rows, first fit)
-- [x] Mirror everything for heat transfer vinyl
+- [x] Mirror for heat transfer vinyl (the cut only, see below)
 - [x] Material profiles per colour: built-in starting values (BladePilot's own) and the user's
       own, saved under a name; heat transfer vinyl switches the mirror on
 - [x] Projects: save and open `.bladepilot` files with the designs inside, recent projects, the
@@ -76,6 +76,10 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Settings: measurements and the mat's grid apart (inch grid like the real mat), light or
       dark, language, where test cuts start, corrections per machine; a diagnosis to save
 - [x] Preview and Send under the machine status, the connection always in sight
+- [x] Only the mat zooms (touchpad pinch taken from WebKitGTK, Ctrl with wheel or keys)
+- [x] Sliders for force, speed and depth that show their range
+- [x] Heat transfer vinyl: the mat shows the designs as they read, the job and the preview are
+      mirrored; the mirror follows the material
 - [ ] File associations on Windows and macOS
 - [ ] Web demo on GitHub Pages: the front end with the planner compiled to WebAssembly
 

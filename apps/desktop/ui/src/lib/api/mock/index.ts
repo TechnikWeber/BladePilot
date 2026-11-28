@@ -287,4 +287,7 @@ export const mockBackend: Backend = {
   async onFileDrop() {
     return () => {};
   },
+  async onPinch() {
+    return () => {};
+  },
 };

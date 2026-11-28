@@ -28,11 +28,11 @@ import type {
   Target,
   Tool,
 } from './api/types';
-import { type Box, type Placement, designSize, inside, normalizeAngle, placedBox, placementMatrix, union } from './geometry';
+import { type Box, type Placement, designSize, inside, mirrorBox, mirrorMatrix, normalizeAngle, placedBox, placementMatrix, union } from './geometry';
 import { errorText, t } from './i18n/index.svelte';
 import { setTheme } from './theme.svelte';
 import type { Key } from './i18n/en';
-import { BUILTIN_MATERIALS, type Material, loadMaterials, normalizeTool, storeMaterials } from './materials';
+import { BUILTIN_MATERIALS, type Material, loadMaterials, matchMaterial, normalizeTool, storeMaterials } from './materials';
 
 export interface Item extends Placement {
   id: number;
@@ -231,6 +231,8 @@ interface ProjectState {
   printMode: boolean;
   printSetup: PrintSetup;
   mirrored: boolean;
+  /** Since 0.9 the items lie as they read and only the job is mirrored; before, they were mirrored. */
+  mirrorInJob?: boolean;
   items: Item[];
   /** Only in the automatic copy: the file it belongs to. */
   projectPath?: string | null;
@@ -297,8 +299,13 @@ class AppState {
   /** Print and cut is on: designs are printed with registration marks, then cut. */
   printMode = $state(false);
   printSetup = $state<PrintSetup>({ paper: 'a4', insetMm: 10 });
-  /** Everything is cut mirrored (heat transfer vinyl is cut from the back). */
+  /**
+   * Everything is cut mirrored (heat transfer vinyl is cut from the back). The mat keeps showing
+   * the designs as they read; the job, the print sheet and the preview are mirrored.
+   */
   mirrored = $state(false);
+  /** The mirror came with a material, and goes again with one that is cut from the front. */
+  mirrorAuto = $state(false);
   /** The mat's grid and rulers: like the measurements, or always centimetres or inches. */
   gridUnit = $state<'auto' | 'cm' | 'in'>('auto');
   gridInch = $derived(this.gridUnit === 'in' || (this.gridUnit === 'auto' && this.unit === 'in'));
@@ -418,6 +425,8 @@ class AppState {
     for (const item of this.items) box = union(box, this.boxesOf(item));
     return box;
   });
+  /** Mirrored jobs turn about the middle of the layout, so they stay where the designs lie. */
+  mirrorAxis = $derived(this.itemsBox ? (this.itemsBox.x0 + this.itemsBox.x1) / 2 : null);
   /** Items that reach outside the cutting area. */
   outside = $derived.by(() => {
     const out = new Set<number>();
@@ -488,13 +497,14 @@ class AppState {
     const machine = this.machine;
     const mat = this.mat;
     if (!machine || !mat || !this.items.length) return null;
+    const axis = this.mirrored ? this.mirrorAxis : null;
     const items = [];
     for (const item of this.items) {
       const design = this.designs[item.design];
       if (design)
         items.push({
           design: item.design,
-          matrix: placementMatrix(item, design),
+          matrix: axis === null ? placementMatrix(item, design) : mirrorMatrix(placementMatrix(item, design), axis),
           cut: $state.snapshot(item.cut),
           print: this.printMode && item.print,
           weed: item.weed ? { ...item.weed } : null,
@@ -579,11 +589,20 @@ class AppState {
     // A blade material keeps the blade in use (vinyl with the ratchet blade is still vinyl).
     const tool: Tool = material.pen ? 'pen' : settings.tool === 'pen' ? 'autoBlade' : settings.tool;
     Object.assign(settings, $state.snapshot(material.settings), { tool });
-    if (material.mirror && !this.mirrored && this.items.length) {
-      this.setMirror(true);
+    if (material.mirror && !this.mirrored) {
+      this.setMirror(true, true);
       this.toast(t('material.mirrored'), 'info');
+    } else if (!material.mirror && this.mirrored && this.mirrorAuto && !this.usesMirrorMaterial()) {
+      this.setMirror(false);
+      this.toast(t('material.unmirrored'), 'info');
     }
     this.savePrefs();
+  }
+
+  /** Whether a pass still has a material that is cut from the back. */
+  private usesMirrorMaterial(): boolean {
+    const passes = this.byColor ? this.colorInfos.map((c) => this.prefsOf(c.color).settings) : [this.single];
+    return passes.some((settings) => matchMaterial(settings, this.materials)?.mirror);
   }
 
   saveMaterial(name: string, settings: Settings): void {
@@ -603,16 +622,20 @@ class AppState {
     return m.builtin ? t(m.name as Key) : m.name;
   }
 
-  /** Mirrors every design across the middle of the layout, or back. */
-  setMirror(on: boolean): void {
+  /** Cuts mirrored or not; the designs on the mat stay as they read. */
+  setMirror(on: boolean, byMaterial = false): void {
     if (on === this.mirrored) return;
     this.mirrored = on;
-    const box = this.itemsBox;
-    if (!box || !this.items.length) return;
-    this.checkpoint();
-    const mid = (box.x0 + box.x1) / 2;
+    this.mirrorAuto = on && byMaterial;
+    this.dirty = true;
+  }
+
+  /** Projects before 0.9 kept the items themselves mirrored: turns them back to how they read. */
+  private unmirrorItems(): void {
+    const axis = this.mirrorAxis;
+    if (axis === null) return;
     for (const item of this.items) {
-      item.cx = 2 * mid - item.cx;
+      item.cx = 2 * axis - item.cx;
       item.sx = -item.sx;
       item.angle = normalizeAngle(-item.angle);
     }
@@ -809,7 +832,7 @@ class AppState {
       }
     }
     const cut: ItemCut = design.image && this.printMode ? { kind: 'contour', offsetMm: 2 } : { kind: 'lines', outerOnly: false, hidden: [] };
-    const item: Item = { id: nextItemId++, design: design.id, cx, cy, angle: 0, sx: this.mirrored ? -k : k, sy: k, cut, print: !!design.printable, weed: null, group: null, locked: false };
+    const item: Item = { id: nextItemId++, design: design.id, cx, cy, angle: 0, sx: k, sy: k, cut, print: !!design.printable, weed: null, group: null, locked: false };
     this.items.push(item);
     this.selected = item.id;
     for (const w of design.warnings) this.toast(`${design.name}: ${w}`, 'info');
@@ -1080,6 +1103,7 @@ class AppState {
       printMode: this.printMode,
       printSetup: $state.snapshot(this.printSetup),
       mirrored: this.mirrored,
+      mirrorInJob: true,
       items: $state.snapshot(this.items),
       ...(withPath ? { projectPath: this.projectPath } : {}),
     };
@@ -1145,6 +1169,7 @@ class AppState {
     this.projectPath = null;
     this.dirty = false;
     this.mirrored = false;
+    this.mirrorAuto = false;
     this.lastSession = null;
     void backend.discardAutosave();
   }
@@ -1191,9 +1216,11 @@ class AppState {
     this.printMode = !!state.printMode;
     if (state.printSetup) this.printSetup = state.printSetup;
     this.mirrored = !!state.mirrored;
+    this.mirrorAuto = false;
     this.items = (state.items ?? [])
       .filter((i) => ids.has(i.design))
       .map((i) => ({ ...i, id: nextItemId++, design: ids.get(i.design) as number, weed: i.weed ?? null, group: i.group ?? null, locked: !!i.locked }));
+    if (this.mirrored && !state.mirrorInJob) this.unmirrorItems();
     this.projectPath = path ?? state.projectPath ?? null;
     this.dirty = path === null;
     this.lastSession = null;
@@ -1594,8 +1621,10 @@ class AppState {
     const area = this.area;
     const right = this.testCorner.endsWith('r');
     const bottom = this.testCorner.startsWith('b');
+    // Where the machine cuts: mirrored for heat transfer vinyl.
+    const axis = this.mirrored ? this.mirrorAxis : null;
     const taken: Box[] = [
-      ...Object.values(this.boxes),
+      ...Object.values(this.boxes).map((b) => (axis === null ? b : mirrorBox(b, axis))),
       ...this.testSpots.map((p) => ({ x0: p.x, y0: p.y, x1: p.x + size, y1: p.y + size })),
     ];
     const columns = Math.max(1, Math.floor((area.w - 2 * margin + gap) / (size + gap)));

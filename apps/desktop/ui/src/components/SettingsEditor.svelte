@@ -5,6 +5,7 @@
   import { app, toolName } from '../lib/state.svelte';
   import { matchMaterial, materialsFor } from '../lib/materials';
   import NumberField from './NumberField.svelte';
+  import SliderField from './SliderField.svelte';
   import Icon from './Icon.svelte';
 
   let { settings, onchange }: { settings: Settings; onchange: () => void } = $props();
@@ -68,6 +69,7 @@
       <button class="btn small" type="submit" disabled={!name.trim()}>{t('material.save')}</button>
     </form>
   {/if}
+  {#if material?.mirror}<p class="hint material-hint mirror-hint"><Icon name="mirrorH" size={13} />{t('material.mirrorHint')}</p>{/if}
   {#if material?.builtin}<p class="hint material-hint">{t('material.hint')}</p>{/if}
   <div class="tool-row">
     <span class="label"><Icon name={pen ? 'pen' : 'blade'} size={14} />{t('settings.tool')}</span>
@@ -77,22 +79,47 @@
       {/each}
     </select>
   </div>
-  <div class="grid">
-    <NumberField label={t('settings.force')} title={t('settings.machineHint')} value={settings.force} optional min={1} max={33} step={1} digits={0} placeholder={t('settings.machine')} onchange={(v) => set('force', v)} />
-    <NumberField label={t('settings.speed')} title={t('settings.machineHint')} value={settings.speed} optional min={1} max={30} step={1} digits={0} placeholder={t('settings.machine')} onchange={(v) => set('speed', v)} />
-    <NumberField
-      label={settings.tool === 'autoBlade' || pen ? t('settings.depth') : t('settings.depthByHand')}
-      title={settings.tool === 'autoBlade' ? t('settings.machineHint') : t('settings.depthByHandHint')}
-      value={pen ? null : settings.depth}
+  <div class="sliders">
+    <SliderField
+      label={t('settings.force')}
+      title={t('settings.machineHint')}
+      value={settings.force}
       optional
-      min={0}
-      max={10}
-      step={1}
-      digits={0}
-      disabled={pen}
-      placeholder={pen ? '–' : settings.tool === 'autoBlade' ? t('settings.machine') : '–'}
-      onchange={(v) => set('depth', v)}
+      min={1}
+      max={33}
+      low={t('settings.forceLow')}
+      high={t('settings.forceHigh')}
+      emptyText={t('settings.machine')}
+      onchange={(v) => set('force', v)}
     />
+    <SliderField
+      label={t('settings.speed')}
+      title={t('settings.machineHint')}
+      value={settings.speed}
+      optional
+      min={1}
+      max={30}
+      low={t('settings.speedLow')}
+      high={t('settings.speedHigh')}
+      emptyText={t('settings.machine')}
+      onchange={(v) => set('speed', v)}
+    />
+    {#if !pen}
+      <SliderField
+        label={settings.tool === 'autoBlade' ? t('settings.depth') : t('settings.depthByHand')}
+        title={settings.tool === 'autoBlade' ? t('settings.machineHint') : t('settings.depthByHandHint')}
+        value={settings.depth}
+        optional
+        min={0}
+        max={10}
+        low={t('settings.depthLow')}
+        high={t('settings.depthHigh')}
+        emptyText={settings.tool === 'autoBlade' ? t('settings.machine') : '–'}
+        onchange={(v) => set('depth', v)}
+      />
+    {/if}
+  </div>
+  <div class="grid">
     <NumberField label={t('settings.repeats')} value={settings.repeats} min={1} max={10} step={1} digits={0} unit="×" onchange={(v) => set('repeats', v ?? 1)} />
   </div>
   {#if !pen}
@@ -185,6 +212,24 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px 10px;
+  }
+
+  .sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mirror-hint {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    color: var(--accent);
+  }
+
+  .mirror-hint :global(svg) {
+    flex: none;
+    margin-top: 1px;
   }
 
   .more {

@@ -121,7 +121,7 @@
     <input type="checkbox" checked={app.mirrored} onchange={(e) => app.setMirror((e.target as HTMLInputElement).checked)} />
     <span class="track"></span>{t('colors.mirror')}
   </label>
-  {#if app.mirrored}<p class="hint explain">{t('colors.mirrorHint')}</p>{/if}
+  {#if app.mirrored}<p class="hint explain">{t('colors.mirrorOn')}</p>{/if}
 
   {#if !rows.length}
     <p class="hint">{t('colors.empty')}</p>

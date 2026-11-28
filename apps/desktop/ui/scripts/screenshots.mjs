@@ -39,6 +39,7 @@ const shots = [
   ['desktop-send.png', '?demo&send=change&lang=en&theme=light'],
   ['desktop-print.png', '?demo&print&lang=en&theme=light'],
   ['desktop-vinyl.png', '?shapes&lang=en&theme=light'],
+  ['desktop-htv.png', '?shapes&htv&lang=en&theme=light'],
   ['desktop-make.png', '?make=shape&lang=en&theme=light'],
   ['desktop-align.png', '?align&machine=portrait4&lang=en&theme=light'],
 ];

@@ -24,9 +24,13 @@ export const BUILTIN_MATERIALS: Material[] = [
   { id: 'b:copyPaper', name: 'material.copyPaper', builtin: true, pen: false, settings: s('autoBlade', 10, 5, 2) },
   { id: 'b:cardstock', name: 'material.cardstock', builtin: true, pen: false, settings: s('autoBlade', 25, 3, 5, 2) },
   { id: 'b:stickerPaper', name: 'material.stickerPaper', builtin: true, pen: false, settings: s('autoBlade', 14, 5, 2) },
+  // Vinyl with a printable top coat on its backing: a little thicker than plain vinyl.
+  { id: 'b:printableVinyl', name: 'material.printableVinyl', builtin: true, pen: false, settings: s('autoBlade', 12, 4, 2) },
   { id: 'b:vinyl', name: 'material.vinyl', builtin: true, pen: false, settings: s('autoBlade', 8, 5, 1) },
   { id: 'b:htv', name: 'material.htv', builtin: true, pen: false, settings: s('autoBlade', 12, 5, 2), mirror: true },
   { id: 'b:glitterHtv', name: 'material.glitterHtv', builtin: true, pen: false, settings: s('autoBlade', 22, 3, 3), mirror: true },
+  // Flock is soft and thick: more force, slower, a deeper blade.
+  { id: 'b:flockHtv', name: 'material.flockHtv', builtin: true, pen: false, settings: s('autoBlade', 18, 3, 3), mirror: true },
   { id: 'b:penPaper', name: 'material.penPaper', builtin: true, pen: true, settings: s('pen', 10, 5, null) },
   { id: 'b:penCard', name: 'material.penCard', builtin: true, pen: true, settings: s('pen', 14, 4, null) },
 ];

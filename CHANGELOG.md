@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.0 – 2026-11-28
+
+Smoother at the machine: only the mat zooms, settings with sliders, heat transfer vinyl that stays
+readable on the mat.
+
+- **Only the mat zooms:** a pinch on the touchpad zoomed the whole window in the Linux app, toolbar
+  and panels included (WebKitGTK does that and has no setting against it). BladePilot now takes
+  the pinch before the web view sees it and zooms the mat around the fingers; toolbar and panels
+  stay where they are. Ctrl with the mouse wheel and Ctrl with + − 0 zoom the mat too, never the
+  page.
+- **Sliders** for force, speed and depth, with the lowest and highest value at their ends (force
+  1 light to 33 firm, speed 1 to 30, depth 0 to 10); the number can still be typed, and a click
+  leaves the value to the machine again.
+- **Heat transfer vinyl stays readable:** the mat shows the designs as they read, only the cut is
+  mirrored. A badge on the mat says so, and the preview and the send dialog show the mirrored
+  cut. A heat transfer material switches the mirror on by itself (nothing to mirror by hand), and
+  a material cut from the front switches it off again. Projects from 0.8 are turned back to how
+  they read when opened.
+- **Materials:** printable sticker vinyl and flock heat transfer vinyl, with BladePilot's own
+  starting values; the names no longer say "(mirrored)", a hint under the material does.
+
 ## 0.8.0 – 2026-11-28
 
 Working like in a professional program: projects, several designs at once, tools, and checking

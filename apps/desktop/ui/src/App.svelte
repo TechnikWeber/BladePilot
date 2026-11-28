@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { app, deviceKey } from './lib/state.svelte';
   import { backend } from './lib/api';
   import type { DesignInfo, MadeSpec } from './lib/api/types';
@@ -49,7 +49,7 @@
     else await app.open(async () => [await backend.openPath(path)], path);
   }
 
-  /** `?connected`, `?demo`, `?shapes`, `?multi`, `?settings`, `?align`, `?make=text|shape`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
+  /** `?connected`, `?demo`, `?shapes`, `?htv`, `?multi`, `?settings`, `?align`, `?make=text|shape`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
   async function screenshotState(params: URLSearchParams): Promise<void> {
     if (params.has('machine')) app.setMachine(params.get('machine') as string);
     if (params.has('connected')) {
@@ -82,6 +82,15 @@
       for (const item of app.items) item.weed = { marginMm: 4, lines: true };
       app.arrange();
       app.selected = app.items[0]?.id ?? null;
+    }
+    if (params.has('htv')) {
+      // Heat transfer vinyl for everything: one pass, cut mirrored, the sliders in sight.
+      const htv = app.materials.find((m) => m.id === 'b:htv');
+      app.byColor = false;
+      if (htv) app.applyMaterial(app.single, htv);
+      app.toasts = [];
+      await tick();
+      document.querySelector('.single')?.scrollIntoView({ block: 'start' });
     }
     if (params.has('multi')) app.selectAll();
     if (params.has('settings')) app.settingsOpen = true;
@@ -155,8 +164,15 @@
 
   function onKey(e: KeyboardEvent): void {
     const target = e.target as HTMLElement;
-    if (target.closest('input, select, textarea') || app.send || app.usbDialog || app.make || app.settingsOpen || app.unsavedAsk) return;
     const ctrl = e.ctrlKey || e.metaKey;
+    // Ctrl with + - 0 zooms the mat, never the page with its toolbar and panels.
+    if (ctrl && ['+', '=', '-', '0'].includes(e.key)) {
+      e.preventDefault();
+      if (e.key === '0') app.fitRequest++;
+      else app.zoomBy(e.key === '-' ? 1 / 1.25 : 1.25);
+      return;
+    }
+    if (target.closest('input, select, textarea') || app.send || app.usbDialog || app.make || app.settingsOpen || app.unsavedAsk) return;
     const step = e.shiftKey ? 10 : 1;
     const key = e.key.toLowerCase();
     if (ctrl && key === 'n') {

@@ -262,6 +262,16 @@ export type JobEvent =
 
 export type JobAction = 'pause' | 'resume' | 'stop';
 
+/** A touchpad pinch over the window (Linux), taken from the web view so that only the mat zooms. */
+export interface Pinch {
+  phase: 'begin' | 'update' | 'end' | 'cancel';
+  /** The distance between the fingers relative to where the pinch began. */
+  scale: number;
+  /** Where the fingers are, in CSS pixels of the window. */
+  x: number;
+  y: number;
+}
+
 /** Everything the UI asks of the Rust side; the mock backend implements the same. */
 export interface Backend {
   readonly mock: boolean;
@@ -327,6 +337,8 @@ export interface Backend {
   controlJob(action: JobAction): Promise<void>;
   /** Calls `onPaths` with the paths of files dropped on the window (Tauri only). */
   onFileDrop(onPaths: (paths: string[]) => void, onHover: (over: boolean) => void): Promise<() => void>;
+  /** Calls `onPinch` for each step of a touchpad pinch (Tauri on Linux only). */
+  onPinch(onPinch: (pinch: Pinch) => void): Promise<() => void>;
 }
 
 export function isApiError(e: unknown): e is ApiError {

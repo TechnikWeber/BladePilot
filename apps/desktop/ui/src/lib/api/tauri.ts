@@ -1,9 +1,10 @@
 // The real backend: the Rust commands of apps/desktop/src-tauri.
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import demoSvg from './demo.svg?raw';
-import type { Backend, DesignInfo, JobEvent } from './types';
+import type { Backend, DesignInfo, JobEvent, Pinch } from './types';
 
 const DESIGN_EXTENSIONS = ['svg', 'svgz', 'pdf', 'dxf', 'studio', 'studio3', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
 /** What a drop or "open" accepts: designs and projects. */
@@ -104,6 +105,7 @@ export const tauriBackend: Backend = {
       }
     });
   },
+  onPinch: (onPinch) => listen<Pinch>('pinch', (event) => onPinch(event.payload)),
 };
 
 export function inTauri(): boolean {

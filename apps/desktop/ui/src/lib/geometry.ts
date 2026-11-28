@@ -73,6 +73,17 @@ export function placementMatrix(p: Placement, design: DesignInfo): Matrix {
   return multiply(multiply(multiply(translate(p.cx, p.cy), rotate(p.angle)), scale(p.sx, p.sy)), translate(-c.x, -c.y));
 }
 
+/** A placement mirrored left to right across the vertical line `x = axis` (heat transfer vinyl). */
+export function mirrorMatrix(m: Matrix, axis: number): Matrix {
+  const [a, b, c, d, e, f] = m;
+  return [-a, b, -c, d, 2 * axis - e, f];
+}
+
+/** A box mirrored left to right across `x = axis`. */
+export function mirrorBox(box: Box, axis: number): Box {
+  return { x0: 2 * axis - box.x1, y0: box.y0, x1: 2 * axis - box.x0, y1: box.y1 };
+}
+
 export function boxOf(points: Iterable<Point>): Box | null {
   let box: Box | null = null;
   for (const p of points) {

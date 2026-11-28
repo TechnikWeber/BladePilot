@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import demo from './api/mock/demo.json';
 import type { DesignInfo } from './api/types';
-import { apply, convexHull, flattenPathData, invert, multiply, placedBox, placementMatrix, polylineLength, rotate, snap1d } from './geometry';
+import { apply, convexHull, flattenPathData, invert, mirrorBox, mirrorMatrix, multiply, placedBox, placementMatrix, polylineLength, rotate, snap1d } from './geometry';
 
 const design = demo as unknown as DesignInfo;
 
@@ -44,5 +44,17 @@ describe('geometry', () => {
 
   it('the hull leaves inner points out', () => {
     expect(convexHull([[0, 0], [4, 0], [4, 4], [0, 4], [2, 2]])).toHaveLength(4);
+  });
+  it('mirrors a placement across a vertical line, as heat transfer vinyl is cut', () => {
+    const m = multiply(rotate(30), [2, 0, 0, 1, 40, 10]);
+    const flipped = mirrorMatrix(m, 100);
+    for (const p of [{ x: 0, y: 0 }, { x: 5, y: -3 }, { x: -7, y: 12 }]) {
+      const a = apply(m, p);
+      const b = apply(flipped, p);
+      expect(b.x).toBeCloseTo(200 - a.x, 9);
+      expect(b.y).toBeCloseTo(a.y, 9);
+    }
+    expect(mirrorMatrix(flipped, 100).map((v) => Math.round(v * 1e9) / 1e9)).toEqual(m.map((v) => Math.round(v * 1e9) / 1e9));
+    expect(mirrorBox({ x0: 10, y0: 5, x1: 30, y1: 8 }, 100)).toEqual({ x0: 170, y0: 5, x1: 190, y1: 8 });
   });
 });

@@ -13,6 +13,8 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 pub mod model;
+#[cfg(target_os = "linux")]
+pub mod pinch;
 pub mod service;
 pub mod udev;
 
@@ -261,6 +263,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(Service::new()))
+        .setup(|app| {
+            // A touchpad pinch zooms the mat, not the whole window.
+            #[cfg(target_os = "linux")]
+            pinch::take_over(app.handle().clone());
+            #[cfg(not(target_os = "linux"))]
+            let _ = app;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             app_info,
             usb_access,

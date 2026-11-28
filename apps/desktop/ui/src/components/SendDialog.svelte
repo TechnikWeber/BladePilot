@@ -201,6 +201,9 @@
               <span>· {app.mat?.id === 'none' ? t('mat.none') : app.mat?.id.replace('x', ' × ') + ' in'}</span>
               {#if plan}<span class="spacer"></span><span class="tnum">{fmtLength(plan.cutMm)}</span>{/if}
             </div>
+            {#if app.mirrored}
+              <div class="mirror-note"><Icon name="mirrorH" size={13} />{t('send.mirrored')}</div>
+            {/if}
             {#if plan}
               <ol class="passes">
                 {#each plan.passes as p, i (i)}
@@ -540,6 +543,16 @@
   .understand input {
     accent-color: var(--accent);
     margin-top: 2px;
+  }
+
+  .mirror-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0 6px;
+    color: var(--accent);
+    font-size: 12.5px;
+    font-weight: 600;
   }
 
   .summary-label {

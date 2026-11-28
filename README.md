@@ -35,8 +35,9 @@ line.
 ## What works today
 
 - **Desktop app:** a cutting mat with grid, rulers and cutting area; drag designs to place,
-  turn and resize them, mirror and duplicate, snap to the mat; one pass per colour with its
-  own tool, force, speed, depth and repeats; an animated preview of what the virtual plotter
+  turn and resize them, mirror and duplicate, snap to the mat, zoom with the wheel or a pinch
+  (only the mat zooms); one pass per colour with its own tool, and sliders for force, speed and
+  depth that show their range; an animated preview of what the virtual plotter
   cuts; a send dialog with progress, pause, stop and tool changes. Light and dark, English
   and German, following the system.
 - **Open designs:** SVG (text becomes outlines), PDF (the vector paths of the first page, as
@@ -49,11 +50,13 @@ line.
   or a heart: enough for a name on a T-shirt without a drawing program. Both can be changed
   later.
 - **Vinyl:** a weeding box around a design and weeding lines through the waste, cut last in a
-  pass of their own; a switch that mirrors everything for heat transfer vinyl; copies put into
-  free spots and **Arrange** to fit the designs onto little material.
+  pass of their own; heat transfer vinyl is cut mirrored while the mat keeps showing the designs
+  as they read (the preview shows the mirrored cut); copies put into free spots and **Arrange**
+  to fit the designs onto little material.
 - **Tools and materials:** per pass the tool in the holder (AutoBlade, ratchet, deep-cut, kraft
-  or rotary blade, pen) and a material to start from (paper, cardstock, sticker paper, vinyl,
-  heat transfer vinyl; paper and cardstock for the pen). The values are BladePilot's own rough
+  or rotary blade, pen) and a material to start from (paper, cardstock, sticker paper,
+  printable sticker vinyl, vinyl, heat transfer vinyl plain, glitter or flock; paper and
+  cardstock for the pen). The values are BladePilot's own rough
   ones: check them with a test cut and save your own under a name. BladePilot warns when the
   machine reports another tool than the job needs.
 - **Projects:** save the mat with its designs, settings and colours as a `.bladepilot` file and
@@ -120,13 +123,19 @@ and **Send** has the machine find the marks before it cuts.
 Start with **Text**, **Shape** or a file from the start screen, or the menu's **New**. For vinyl,
 **Text** and **Shape** in the toolbar make designs right in the app. In the selection
 panel a design gets a weeding box (with weeding lines through the waste) and copies; the
-arrange button fits everything onto little material. Choose a material for each colour, and
-switch on **Mirror for heat transfer vinyl** when the film is cut from the back.
+arrange button fits everything onto little material. Choose a material for each colour; a heat
+transfer material switches **Mirror for heat transfer vinyl** on by itself, since that film is
+cut from the back. The mat keeps showing the design as it reads, the preview shows the cut.
 
 <p>
   <img alt="Shapes on the mat, each in a dashed weeding box, the weeding pass listed after the black one" src="docs/images/desktop-vinyl.png" width="49%">
   <img alt="The shape dialog: a star with its points and inner radius, the preview on the right" src="docs/images/desktop-make.png" width="49%">
 </p>
+
+For heat transfer vinyl the sliders show what each setting can do, and the badge above the mat
+says that the cut is mirrored while the designs stay readable:
+
+![Heat transfer vinyl: the badge "Cut mirrored" above the mat, the material with its hint and the sliders for force, speed and depth](docs/images/desktop-htv.png)
 
 Before the first real job, the **alignment test** (Settings) shows on a sheet in the grid's
 corner how far the machine draws out; BladePilot keeps the correction for that machine:
