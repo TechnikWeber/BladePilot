@@ -334,6 +334,7 @@ const en = {
   "error.pdf": "The PDF file could not be read (encrypted or damaged?).",
   "error.text": "The text could not be set: is a font installed that has these letters?",
   "error.badShape": "Unknown shape.",
+  "machine.switched": "Switched the model to the {name} that is connected.",
   'units.mm': 'mm',
   'units.in': 'in',
 };

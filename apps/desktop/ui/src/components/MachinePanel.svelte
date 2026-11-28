@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { app, deviceKey } from '../lib/state.svelte';
   import { t, num, errorText } from '../lib/i18n/index.svelte';
   import { fmtLength } from '../lib/format';
@@ -19,6 +20,21 @@
     void app.target;
     void app.machineId;
     void app.checkStatus();
+  });
+
+  // Choosing a connected machine of a known model switches to that model, so the mat and the
+  // cutting area match it (the job would be refused otherwise). Only a new choice switches: a
+  // model picked by hand afterwards stays, with the note below.
+  $effect(() => {
+    void app.target;
+    untrack(() => {
+      const d = app.device;
+      if (d?.machine && d.machine !== app.machineId && app.machines.some((m) => m.id === d.machine)) {
+        app.setMachine(d.machine);
+        app.savePrefs();
+        app.toast(t('machine.switched', { name: d.name }), 'info');
+      }
+    });
   });
 
   const found = $derived(app.device);

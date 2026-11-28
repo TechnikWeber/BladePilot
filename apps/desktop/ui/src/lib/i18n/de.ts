@@ -336,6 +336,7 @@ const de: Record<Key, string> = {
   "error.pdf": "Die PDF-Datei ließ sich nicht lesen (verschlüsselt oder beschädigt?).",
   "error.text": "Der Text ließ sich nicht setzen: Ist eine Schrift mit diesen Buchstaben installiert?",
   "error.badShape": "Unbekannte Form.",
+  "machine.switched": "Modell auf den angeschlossenen {name} umgestellt.",
   'units.mm': 'mm',
   'units.in': 'Zoll',
 };
