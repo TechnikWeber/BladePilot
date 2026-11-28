@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.2 – 2026-11-28
+
+From the first test on Linux (Portrait 4, Fedora, USB and Bluetooth).
+
+- **Jobs on a mat land where they are placed, also the second and third:** a job used to end by
+  making the spot below its cut the new origin (meant for roll media), so every later job on the
+  same mat landed lower. On a mat a job now ends back at its origin.
+- **Bluetooth search from the AppImage:** the AppImage's library path made `bluetoothctl` fail,
+  and the search said it found nothing. System programs now start without it, and a failing
+  search says why. When the system's Bluetooth settings paired the machine over Bluetooth Low
+  Energy only, BladePilot says how to fix that.
+- **The chosen connection decides the model:** choosing a connected Portrait 4 switches the model
+  (and its standard mat, 8.5 × 12 in) instead of refusing the job. Model and mat are remembered.
+- **Connection always in sight:** the machine panel stays at the top of the sidebar while the
+  rest scrolls. A machine that is connected and ready shows a green block with a pulsing ring;
+  the status is checked every few seconds, so an unplugged cable shows at once. The virtual
+  plotter is marked "Simulation".
+- **Test cut:** 15 mm inside the cutting area, starting in a chosen corner (top or bottom, left or
+  right) with exact X and Y; the next test goes beside it, away from that corner. With a pen it
+  is a **test drawing**, and the dialogs say "draw" instead of "cut".
+
 ## 0.7.1 – 2026-11-28
 
 - The desktop AppImage carries update information and comes with a `.zsync` file: Gear Lever

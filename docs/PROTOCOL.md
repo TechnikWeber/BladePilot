@@ -50,6 +50,14 @@ V1.05, observed over USB and Bluetooth). Everything marked *to verify* is still 
 - Coordinates are written feed axis first: `M<down>,<right>`. The origin is the top-left
   corner of the media as it enters the machine.
 
+## Bluetooth Low Energy
+
+Observed on a Portrait 4 under Linux: besides its classic address (`00:1B:41:CE:BB:CB`, the serial
+port service on RFCOMM channel 1) the machine advertises over Bluetooth Low Energy under a random
+static address with the same lower bytes (`C0:1B:41:CE:BB:CB`) and the same name; the advertising
+flags say "LE only". The system's Bluetooth settings may pair with that side, which carries no
+RFCOMM. What it offers over GATT is still to be looked at.
+
 ## Queries
 
 | Bytes | Meaning | Reply |
@@ -93,7 +101,7 @@ half second while connected; it never sends `ESC EOT`.
 | `FY<n>` | Roller track enhancing: 0 on |
 | `FW<id>` | Media preset (older machines only) |
 | `L0` | Pen-up marker between sections |
-| `SO0` | Park, used after the last move |
+| `SO0` | Makes the current position the new origin. Observed on the Portrait 4: after a job that ended with `M<below the cut>,0` and `SO0`, the next job on the same mat landed lower by that much, until the mat was loaded again. BladePilot sends it only on roll media; on a mat a job ends with `M0,0` |
 | `H` | Home |
 | `BZ1,<d0>,<r0>,<d1>,<r1>,<d2>,<r2>,<d3>,<r3>,0` | A cubic Bézier curve with the tool down: start, two control points, end. The Portrait 4 cuts curves sent this way; BladePilot sends short lines instead |
 | `TR…`, `BE…` | Seen around and inside jobs of the vendor software; *meaning unknown*, not needed by BladePilot |

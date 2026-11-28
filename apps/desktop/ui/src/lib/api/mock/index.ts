@@ -160,9 +160,12 @@ export const mockBackend: Backend = {
     return simulateMock(job, designs, machines);
   },
   async scanDevices() {
-    return [];
+    // `?connected` pretends a Portrait 4 on USB, for screenshots of a connected machine.
+    if (!new URLSearchParams(location.search).has('connected')) return [];
+    return [{ machine: 'portrait4', name: 'Silhouette Portrait 4', vendorId: 0x0b4d, productId: 0x113f, serial: null, bus: '1', address: 11, bluetooth: null }];
   },
   async deviceStatus() {
+    if (new URLSearchParams(location.search).has('connected')) return { version: 'Portrait 4 V1.05', status: 'ready', tools: ['autoBlade'] };
     throw { code: 'usb', message: 'no USB in the browser demo' };
   },
   async scanBluetooth() {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { app } from './lib/state.svelte';
+  import { app, deviceKey } from './lib/state.svelte';
   import { backend } from './lib/api';
   import type { DesignInfo, MadeSpec } from './lib/api/types';
   import { setLanguage } from './lib/i18n/index.svelte';
@@ -41,9 +41,13 @@
     return () => unlisten?.();
   });
 
-  /** `?demo`, `?shapes`, `?make=text|shape`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
+  /** `?connected`, `?demo`, `?shapes`, `?make=text|shape`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
   async function screenshotState(params: URLSearchParams): Promise<void> {
     if (params.has('machine')) app.setMachine(params.get('machine') as string);
+    if (params.has('connected')) {
+      await app.scan();
+      if (app.devices[0]) app.target = deviceKey(app.devices[0]);
+    }
     if (params.has('demo')) {
       await app.openDemo();
       if (!params.has('select')) app.selected = null;
@@ -187,10 +191,13 @@
     <PreviewBar />
   </main>
   <aside class="sidebar">
+    <!-- The machine and its connection stay in sight; the rest scrolls below them. -->
     <MachinePanel />
-    <PrintPanel />
-    <ColorList />
-    <ItemPanel />
+    <div class="sidebar-scroll">
+      <PrintPanel />
+      <ColorList />
+      <ItemPanel />
+    </div>
   </aside>
   <StatusBar />
 </div>
@@ -227,8 +234,23 @@
   }
 
   .sidebar {
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
     background: var(--panel);
     border-left: 1px solid var(--border);
+  }
+
+  .sidebar > :global(section) {
+    flex: none;
+    box-shadow: 0 6px 10px -10px rgba(0, 0, 0, 0.35);
+    z-index: 1;
+  }
+
+  .sidebar-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
   }
 </style>

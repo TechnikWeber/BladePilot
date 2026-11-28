@@ -582,11 +582,13 @@ class AppState {
     this.status = null;
     this.statusError = null;
     this.fitRequest++;
+    this.savePrefs();
   }
 
   setMat(id: string): void {
     this.matId = id;
     this.fitRequest++;
+    this.savePrefs();
   }
 
   /** Zooms around a point of the view (its centre by default). */
@@ -1049,23 +1051,39 @@ class AppState {
 
   device = $derived(this.devices.find((d) => deviceKey(d) === this.target) ?? null);
 
-  async checkStatus(): Promise<void> {
-    this.checking = true;
-    this.statusError = null;
+  /**
+   * Asks the machine how it is. `quiet` (the regular check while a machine is chosen) keeps the
+   * last answer on screen until the new one is there.
+   */
+  async checkStatus(quiet = false): Promise<void> {
+    if (quiet && this.checking) return;
+    if (!quiet) {
+      this.checking = true;
+      this.statusError = null;
+    }
+    const target = this.target;
     try {
       const device = this.device;
-      this.status = device?.bluetooth
+      const status = device?.bluetooth
         ? await backend.bluetoothStatus(device.bluetooth)
         : device
           ? await backend.deviceStatus(device.bus, device.address)
           : await backend.virtualStatus(this.machineId);
+      // An answer for a connection that is no longer chosen is not shown.
+      if (target !== this.target) return;
+      this.status = status;
+      this.statusError = null;
     } catch (e) {
+      if (target !== this.target) return;
       this.status = null;
       this.statusError = e as ApiError;
     } finally {
-      this.checking = false;
+      if (!quiet) this.checking = false;
     }
   }
+
+  /** A job is under way (or being started): the machine is not asked in between. */
+  jobBusy = $derived(!!this.send && ['connecting', 'running', 'paused', 'finishing', 'stopping'].includes(this.send.phase));
 
   targetValue(): Target {
     const device = this.device;

@@ -111,6 +111,6 @@ npm run screenshots           # README images into docs/images (headless Chrome,
 BLESS=1 cargo test -p bladepilot-desktop   # after changing machines or the demo design: mock JSON
 ```
 
-`?demo`, `?shapes`, `?make=text|shape`, `?select`, `?preview=0.6`, `?send=change|start`, `?test`, `?print`, `?lang=de` and `?theme=dark` put the
+`?connected` (a pretend Portrait 4 on USB), `?demo`, `?shapes`, `?make=text|shape`, `?select`, `?preview=0.6`, `?send=change|start`, `?test`, `?print`, `?lang=de` and `?theme=dark` put the
 front end into fixed states for screenshots; in `npm run tauri dev` the variable `VITE_STATE` does the
 same inside the window (e.g. `VITE_STATE='demo&send=start'`).

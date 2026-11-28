@@ -29,6 +29,19 @@ A Portrait 4, firmware V1.05, Silhouette Studio 5.0.556, BladePilot 0.3.0, on Wi
 Next time: T4, T6 and T7 with the desktop app (USB and Bluetooth), a long job to see how much
 the machine buffers, and how Studio stops a running job.
 
+## Linux test (2026-11-28)
+
+The same Portrait 4 on a Fedora laptop, desktop app 0.7.1 as AppImage and a test build of 0.7.2.
+
+- **USB and Bluetooth work** from the desktop app, test drawings and jobs with the pen.
+- Found and fixed: every job on a mat set a new origin below its cut (`SO0`), so the next job
+  landed lower by that much; the AppImage's library path broke the Bluetooth search
+  (`bluetoothctl` failed and the search reported nothing); the model kept the Portrait 3 from a
+  fresh start and the job was refused until it was switched; the test cut sat too close to the
+  edge of the cutting area.
+- The system's Bluetooth settings had paired the machine over Bluetooth Low Energy; BladePilot
+  needs the classic side and now says so.
+
 ## Bring
 
 - The machine (Portrait 3 or 4), its USB cable, a mat, plain paper, light card

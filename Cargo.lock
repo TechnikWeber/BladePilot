@@ -229,14 +229,14 @@ dependencies = [
 
 [[package]]
 name = "bladepilot-capture"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "bladepilot-cli"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "bladepilot-capture",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "bladepilot-design"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "bladepilot-trace",
  "craft-silhouette-studio",
@@ -266,7 +266,7 @@ dependencies = [
 
 [[package]]
 name = "bladepilot-desktop"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "base64 0.23.1",
  "bladepilot-design",
@@ -288,7 +288,7 @@ dependencies = [
 
 [[package]]
 name = "bladepilot-device"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "bladepilot-machines",
  "bladepilot-sim",
@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "bladepilot-job"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "bladepilot-design",
  "bladepilot-machines",
@@ -311,14 +311,14 @@ dependencies = [
 
 [[package]]
 name = "bladepilot-machines"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "craft-plotter",
 ]
 
 [[package]]
 name = "bladepilot-print"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "craft-plotter",
  "miniz_oxide 0.9.1",
@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "bladepilot-sim"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "bladepilot-machines",
  "thiserror 2.0.21",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "bladepilot-trace"
-version = "0.7.1"
+version = "0.7.2"
 
 [[package]]
 name = "block-buffer"

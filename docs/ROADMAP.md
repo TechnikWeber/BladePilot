@@ -83,6 +83,8 @@ the virtual plotter first, then checked against the real machine on a
       to T3 and Bluetooth; the facts are in [PROTOCOL.md](PROTOCOL.md)
 - [x] Fixed: pen passes no longer send the blade depth; the tool is checked before passes;
       a job only counts as done once the machine was seen moving
+- [x] Linux (2026-11-28): the desktop app over USB and Bluetooth on Fedora; jobs on a mat no
+      longer shift the origin; Bluetooth search from the AppImage fixed
 - [ ] Second day: tool change (T4), stopping a running job (T6), the desktop app (T7) over USB
       and Bluetooth, a long job to learn the machine's buffer, Studio's test cut (T8)
 - [ ] First release that is no longer marked experimental
@@ -95,6 +97,11 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Bluetooth on Windows and Linux: the same GP-GL over Bluetooth Classic (RFCOMM channel 1),
       no pairing; a search in the command line (`devices --bluetooth`) and the desktop app
 - [ ] Bluetooth on macOS (IOBluetooth); until then the app says to use USB
+- [ ] Bluetooth Low Energy: find out what the Portrait 4 offers over GATT; if it carries the
+      same bytes, a second transport (also a way to Bluetooth on macOS)
+- [ ] Tools per pass instead of pens hidden in the colour list: action (cut, draw) and the
+      machine's tools (AutoBlade, ratchet, deep-cut, kraft, rotary blade, sketch pen), material
+      profiles per tool, a warning when the machine reports another tool
 - [ ] Signed Windows builds: Smart App Control blocks a fresh unsigned release, above all a
       browser download (seen with 0.4.0's command line; the desktop installer got through).
       Free for open source through the SignPath Foundation, signing in the release workflow

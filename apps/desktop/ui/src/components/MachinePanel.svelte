@@ -38,6 +38,14 @@
   });
 
   const found = $derived(app.device);
+
+  // While a machine is chosen and idle, ask it every few seconds how it is, so "ready" stays true
+  // and an unplugged cable shows at once.
+  $effect(() => {
+    if (!found || app.jobBusy) return;
+    const timer = setInterval(() => void app.checkStatus(true), 4000);
+    return () => clearInterval(timer);
+  });
   const mismatch = $derived(found && found.machine && found.machine !== app.machineId ? found : null);
 
   const statusText = $derived.by(() => {
@@ -93,7 +101,7 @@
       <Icon name="bluetooth" class={app.scanningBluetooth ? 'pulse' : ''} />
     </button>
   </div>
-  <div class="status">
+  <div class="status {statusKind}" class:live={!!found} role="status">
     <span class="dot {statusKind}"></span>
     <span class="status-text">{statusText}</span>
     {#if found}
@@ -115,11 +123,8 @@
   {/if}
   {#if app.scanningBluetooth}
     <div class="note"><Icon name="bluetooth" size={15} />{t('machine.bluetoothSearching')}</div>
-  {:else if found?.bluetooth}
+  {:else if found?.bluetooth && statusKind !== 'ok'}
     <div class="note"><Icon name="bluetooth" size={15} />{t('machine.bluetoothHint')}</div>
-  {/if}
-  {#if found}
-    <div class="note warn"><Icon name="alert" size={15} />{t('machine.experimental')}</div>
   {/if}
 </section>
 
@@ -172,6 +177,35 @@
     white-space: nowrap;
   }
 
+  /* A real machine: the whole block says how it is. */
+  .status.live.ok {
+    background: color-mix(in srgb, var(--ok) 13%, var(--panel));
+    border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+  }
+
+  .status.live.ok .status-text {
+    color: var(--ok);
+  }
+
+  .status.live.warn {
+    background: var(--warn-soft);
+    border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  }
+
+  .status.live.warn .status-text {
+    color: var(--warn);
+  }
+
+  .status.bad {
+    background: var(--danger-soft);
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  }
+
+  .status.bad .status-text {
+    color: var(--danger);
+    white-space: normal;
+  }
+
   .version {
     flex: 1;
     min-width: 0;
@@ -200,11 +234,45 @@
   }
 
   .dot {
+    position: relative;
     flex: none;
     width: 8px;
     height: 8px;
     border-radius: 50%;
     background: var(--text-3);
+  }
+
+  /* Connected and ready: a ring keeps spreading from the dot. */
+  .status.live.ok .dot {
+    width: 10px;
+    height: 10px;
+  }
+
+  .status.live.ok .dot::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border: 2px solid var(--ok);
+    border-radius: 50%;
+    animation: ring 1.8s ease-out infinite;
+  }
+
+  @keyframes ring {
+    0% {
+      transform: scale(0.5);
+      opacity: 0.9;
+    }
+    100% {
+      transform: scale(1.6);
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .status.live.ok .dot::after {
+      animation: none;
+      opacity: 0.45;
+    }
   }
 
   .dot.ok {

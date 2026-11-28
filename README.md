@@ -24,7 +24,8 @@ files (`.studio3`) or pictures, or type a name, place them on the mat and cut. A
 vendor software for the machines you own, written in Rust, with a desktop app and a command
 line.
 
-> **Alpha.** BladePilot cuts on a real Portrait 4 over USB and Bluetooth (tested on Windows);
+> **Alpha.** BladePilot cuts on a real Portrait 4 over USB and Bluetooth (tested on Windows and
+> Linux);
 > the Portrait 3 and the other machines are not tested yet. A job that has been sent completely
 > cannot be stopped from BladePilot yet: keep the machine's power button within reach, and try
 > new settings with a test cut first.
