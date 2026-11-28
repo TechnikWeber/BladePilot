@@ -65,7 +65,18 @@ the virtual plotter first, then checked against the real machine on a
 - [x] Mirror everything for heat transfer vinyl
 - [x] Material profiles per colour: built-in starting values (BladePilot's own) and the user's
       own, saved under a name; heat transfer vinyl switches the mirror on
-- [ ] File associations on Windows and macOS; remember the last session
+- [x] Projects: save and open `.bladepilot` files with the designs inside, recent projects, the
+      last session kept automatically and offered at the next start; New
+- [x] Multiple selection: box and Shift-click, move, turn and resize together, align, distribute,
+      group, lock in place
+- [x] Weld overlapping outlines (also for text in script fonts); tidy lines: join pieces that
+      meet, cut lines drawn twice once (DXF files are tidied on import)
+- [x] Tool per pass (AutoBlade, ratchet, deep-cut, kraft, rotary blade, pen) with materials for
+      blades and the pen, a warning when the machine reports another tool
+- [x] Settings: measurements and the mat's grid apart (inch grid like the real mat), light or
+      dark, language, where test cuts start, corrections per machine; a diagnosis to save
+- [x] Preview and Send under the machine status, the connection always in sight
+- [ ] File associations on Windows and macOS
 - [ ] Web demo on GitHub Pages: the front end with the planner compiled to WebAssembly
 
 ## Phase 4: print and cut
@@ -75,7 +86,9 @@ the virtual plotter first, then checked against the real machine on a
 - [ ] Mark search with three marks: written, waits for the hardware test (T5); four marks and
       manual positioning later
 - [ ] Print and cut on the command line
-- [ ] Calibration sheet and stored offsets per machine
+- [x] Calibration sheet (marks and printed rulers; the machine draws crosses on the targets) and
+      corrections per machine, for print and cut and for the mat (alignment test); to be tried on
+      a machine
 
 ## Phase 5: hardware test days
 
@@ -99,15 +112,11 @@ the virtual plotter first, then checked against the real machine on a
 - [ ] Bluetooth on macOS (IOBluetooth); until then the app says to use USB
 - [ ] Bluetooth Low Energy: find out what the Portrait 4 offers over GATT; if it carries the
       same bytes, a second transport (also a way to Bluetooth on macOS)
-- [ ] Tools per pass instead of pens hidden in the colour list: action (cut, draw) and the
-      machine's tools (AutoBlade, ratchet, deep-cut, kraft, rotary blade, sketch pen), material
-      profiles per tool, a warning when the machine reports another tool
 - [ ] Signed Windows builds: Smart App Control blocks a fresh unsigned release, above all a
       browser download (seen with 0.4.0's command line; the desktop installer got through).
       Free for open source through the SignPath Foundation, signing in the release workflow
 - [ ] Move the head with the arrow keys before a job or a test cut
 - [ ] Text in the PDF import (glyph outlines); DXF text and hatches
-- [ ] Text: weld overlapping letters of script fonts into one outline
 - [ ] Cameo-only features as experimental: second tool holder, electrostatic mat
 
 ## Open points in other projects BladePilot means to solve
@@ -153,7 +162,7 @@ the everyday job are made in the app.
 | Mirror for heat transfer vinyl | done |
 | Open PDF and DXF | done (vector paths; text in PDFs must be converted to paths) |
 | Bluetooth | Windows and Linux: done, experimental; macOS later |
-| Design tools: shapes, text, weld, knife, sketch fills | text and simple shapes: done; weld, knife, sketch fills: not planned, use Inkscape |
+| Design tools: shapes, text, weld, knife, sketch fills | text, simple shapes and weld: done; knife and sketch fills: not planned, use Inkscape |
 | Design store, library, cloud | out of scope |
 | Firmware updates | out of scope |
 

@@ -51,9 +51,22 @@ line.
 - **Vinyl:** a weeding box around a design and weeding lines through the waste, cut last in a
   pass of their own; a switch that mirrors everything for heat transfer vinyl; copies put into
   free spots and **Arrange** to fit the designs onto little material.
-- **Material profiles:** starting settings for paper, cardstock, sticker paper, vinyl, heat
-  transfer vinyl and pens (BladePilot's own rough values: check them with a test cut), and
-  your own profiles saved under a name.
+- **Tools and materials:** per pass the tool in the holder (AutoBlade, ratchet, deep-cut, kraft
+  or rotary blade, pen) and a material to start from (paper, cardstock, sticker paper, vinyl,
+  heat transfer vinyl; paper and cardstock for the pen). The values are BladePilot's own rough
+  ones: check them with a test cut and save your own under a name. BladePilot warns when the
+  machine reports another tool than the job needs.
+- **Projects:** save the mat with its designs, settings and colours as a `.bladepilot` file and
+  open it again anywhere; the last session is kept automatically and offered at the next start.
+- **Arrange like in a drawing program:** select several designs with a box or Shift-click, move,
+  turn and resize them together, align and distribute them, group them, lock them in place, and
+  weld overlapping outlines into one. Tidy lines joins pieces that meet (DXF files arrive
+  tidied) and cuts lines drawn twice only once.
+- **Alignment and calibration:** an alignment test draws numbered nested corners at the edges
+  of a sheet, so you read off how far the machine is out; a calibration sheet does the same for
+  print and cut. The corrections are kept per machine.
+- **Settings:** the mat's grid in inches like the real mat while measuring in millimetres, light
+  or dark, English or German, where test cuts start; a diagnosis to save for bug reports.
 - **Pictures and stickers:** open PNG, JPEG, WebP, BMP or GIF; BladePilot traces their edges
   (from transparency or from the dark parts, with a threshold and ignoring specks) and cuts
   them, or cuts a contour at a chosen distance around the whole picture.
@@ -104,7 +117,8 @@ and **Send** has the machine find the marks before it cuts.
 
 ![Print and cut: stickers on an A4 sheet with registration marks, the contours in magenta](docs/images/desktop-print.png)
 
-For vinyl, **Text** and **Shape** in the toolbar make designs right in the app. In the selection
+Start with **Text**, **Shape** or a file from the start screen, or the menu's **New**. For vinyl,
+**Text** and **Shape** in the toolbar make designs right in the app. In the selection
 panel a design gets a weeding box (with weeding lines through the waste) and copies; the
 arrange button fits everything onto little material. Choose a material for each colour, and
 switch on **Mirror for heat transfer vinyl** when the film is cut from the back.
@@ -113,6 +127,11 @@ switch on **Mirror for heat transfer vinyl** when the film is cut from the back.
   <img alt="Shapes on the mat, each in a dashed weeding box, the weeding pass listed after the black one" src="docs/images/desktop-vinyl.png" width="49%">
   <img alt="The shape dialog: a star with its points and inner radius, the preview on the right" src="docs/images/desktop-make.png" width="49%">
 </p>
+
+Before the first real job, the **alignment test** (Settings) shows on a sheet in the grid's
+corner how far the machine draws out; BladePilot keeps the correction for that machine:
+
+![The alignment test: numbered nested corners at the edges of an A4 sheet, the dialog with the sheet size and the pen](docs/images/desktop-align.png)
 
 The colour list holds each colour's tool and settings and remembers them for the next design.
 Dark mode follows the system:

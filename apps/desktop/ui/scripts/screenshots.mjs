@@ -40,6 +40,7 @@ const shots = [
   ['desktop-print.png', '?demo&print&lang=en&theme=light'],
   ['desktop-vinyl.png', '?shapes&lang=en&theme=light'],
   ['desktop-make.png', '?make=shape&lang=en&theme=light'],
+  ['desktop-align.png', '?align&machine=portrait4&lang=en&theme=light'],
 ];
 
 for (const [name, query] of shots) {

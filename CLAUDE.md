@@ -42,7 +42,7 @@ Read [docs/CLEAN-ROOM.md](docs/CLEAN-ROOM.md) before touching protocol or file-f
 | Path | What |
 |---|---|
 | `crates/machines` | Model table: USB ids, protocol generation, cutting width, mats |
-| `crates/design` | SVG, PDF, DXF, `.studio`/`.studio3` and picture import into one model (mm, y down); text and shapes; contours, outermost lines, weeding lines |
+| `crates/design` | SVG, PDF, DXF, `.studio`/`.studio3` and picture import into one model (mm, y down); text and shapes; contours, outermost lines, weeding lines, welding, tidying lines |
 | `crates/job` | Flatten, place, group into passes, order, check, encode via craft-plotter |
 | `crates/sim` | Virtual plotter: parses the byte stream, answers queries, draws SVG |
 | `crates/device` | Transports (virtual; USB via nusb; Windows printer class driver) and the job protocol (`Session`) |
@@ -116,6 +116,6 @@ npm run screenshots           # README images into docs/images (headless Chrome,
 BLESS=1 cargo test -p bladepilot-desktop   # after changing machines or the demo design: mock JSON
 ```
 
-`?connected` (a pretend Portrait 4 on USB), `?demo`, `?shapes`, `?make=text|shape`, `?select`, `?preview=0.6`, `?send=change|start`, `?test`, `?print`, `?lang=de` and `?theme=dark` put the
+`?connected` (a pretend Portrait 4 on USB), `?demo`, `?shapes`, `?multi`, `?settings`, `?align`, `?make=text|shape`, `?select`, `?preview=0.6`, `?send=change|start`, `?test`, `?print`, `?lang=de` and `?theme=dark` put the
 front end into fixed states for screenshots; in `npm run tauri dev` the variable `VITE_STATE` does the
 same inside the window (e.g. `VITE_STATE='demo&send=start'`).

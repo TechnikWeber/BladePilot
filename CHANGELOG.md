@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8.0 – 2026-11-28
+
+Working like in a professional program: projects, several designs at once, tools, and checking
+where the machine cuts.
+
+- **Projects:** save the mat as a `.bladepilot` file (designs, placements, cut settings, colours,
+  print and cut), open it again anywhere, recent projects in the new file menu. The last session
+  is kept automatically and offered at the next start. **New** starts an empty mat and asks
+  before unsaved changes are lost; the start screen offers text, shape or a file.
+- **Several designs at once:** select with a box or Shift-click (Ctrl+A for all), move, turn and
+  resize them together, align left, right, top, bottom or to the middle, distribute evenly,
+  group (Ctrl+G), lock in place. A single design aligns to the cutting area.
+- **Weld and tidy:** overlapping outlines become one (also as an option for text in script
+  fonts); tidying joins line pieces that meet into continuous lines and cuts lines drawn twice
+  once. DXF drawings are tidied when they are opened.
+- **Tools per pass:** AutoBlade, ratchet, deep-cut, kraft or rotary blade, or the pen. Only the
+  AutoBlade's depth goes to the machine; for blades set by hand it is a reminder. Materials come
+  per tool (paper and cardstock for the pen), and the send dialog warns when the machine reports
+  another tool than the first pass needs.
+- **Alignment test and corrections:** numbered nested corners at the edges of an A4 or Letter
+  sheet show how far the machine draws out; the reading becomes a correction kept per machine.
+  For print and cut, a calibration sheet with printed rulers, where the machine draws crosses
+  after finding the marks. Both still to be tried on a machine.
+- **Settings:** measurements and the mat's grid apart (an inch grid like the real mat while
+  measuring in millimetres), light, dark or the system's, English or German, where test cuts
+  start, the corrections; **Save diagnosis** collects versions, the system, the machines found
+  and the latest log for bug reports.
+- **Preview and Send** moved under the machine status, so they never fall off a narrow window;
+  the toolbar shows icons only when the window is narrow.
+- **Downloads:** the command line comes with the desktop app's deb and rpm packages; on its own
+  only as archives (Linux tar.gz, Windows exe, macOS tar.gz), no more AppImage or packages of its
+  own. The release notes start with a table of which file to take.
+- Errors in the send dialog come with a hint what to do.
+
 ## 0.7.2 – 2026-11-28
 
 From the first test on Linux (Portrait 4, Fedora, USB and Bluetooth).
