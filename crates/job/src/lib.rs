@@ -244,6 +244,55 @@ pub fn test_pattern(at: (f64, f64)) -> Design {
     Design { page_mm: Some((s, s)), shapes: vec![square, triangle], ..Design::default() }
 }
 
+/// Lines per corner of the alignment test: 0 to this many mm inside the edges.
+pub const ALIGNMENT_STEPS: u32 = 10;
+
+/// The alignment test for a sheet `width_mm` × `height_mm` laid into the top-left corner of the
+/// mat's grid: in every corner nested corners, 1 mm apart, from the sheet's edge (line 0) inwards,
+/// every second one numbered. Where the machine draws exactly, line 0 lies on the edge; when
+/// lines 0, 1, … fall off the sheet, it draws that many mm too far out; a gap of so many line
+/// spacings before line 0 means too far in.
+pub fn alignment_pattern(width_mm: f64, height_mm: f64) -> Design {
+    use bladepilot_design::strokes::{digits, text_width};
+    use bladepilot_design::{Shape, kurbo::BezPath};
+    let (w, h) = (width_mm, height_mm);
+    let label_h = 1.6;
+    let mut lines: Vec<Polyline> = Vec::new();
+    for k in 0..=ALIGNMENT_STEPS {
+        let d = f64::from(k);
+        let leg = if k % 2 == 0 { 22.0 } else { 16.0 };
+        // Corner point and the directions along and into the sheet: x left or right, y up or down.
+        for (sx, sy) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+            let cx = if sx > 0.0 { d } else { w - d };
+            let cy = if sy > 0.0 { d } else { h - d };
+            lines.push(vec![(cx + sx * leg, cy), (cx, cy), (cx, cy + sy * leg)]);
+            if k % 2 == 0 {
+                let text = k.to_string();
+                let tw = text_width(&text, label_h);
+                // Beyond the far end of each leg, on the inner side of the line, so that line 0's
+                // labels stay on the sheet too.
+                let ax = if sx > 0.0 { cx + leg + 1.0 } else { cx - leg - 1.0 - tw };
+                let ay = if sy > 0.0 { cy + 0.2 } else { cy - 0.2 - label_h };
+                lines.extend(digits(&text, (ax, ay), label_h));
+                let bx = if sx > 0.0 { cx + 0.2 } else { cx - 0.2 - tw };
+                let by = if sy > 0.0 { cy + leg + 1.0 } else { cy - leg - 1.0 - label_h };
+                lines.extend(digits(&text, (bx, by), label_h));
+            }
+        }
+    }
+    let mut path = BezPath::new();
+    for line in &lines {
+        for (i, &p) in line.iter().enumerate() {
+            if i == 0 {
+                path.move_to(p);
+            } else {
+                path.line_to(p);
+            }
+        }
+    }
+    Design { page_mm: Some((w, h)), shapes: vec![Shape { path, stroke: None, fill: None }], ..Design::default() }
+}
+
 /// Why no plan could be made.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Error {
@@ -573,6 +622,16 @@ mod tests {
 
     fn colors(plan: &Plan) -> Vec<Option<Rgb>> {
         plan.passes.iter().map(|p| p.color).collect()
+    }
+
+    #[test]
+    fn the_alignment_test_fills_the_sheet_corners_and_plans() {
+        let design = alignment_pattern(210.0, 297.0);
+        let bb = design.bbox().unwrap();
+        assert!(bb.x0.abs() < 1e-9 && bb.y0.abs() < 1e-9, "line 0 on the left and top edges: {bb:?}");
+        assert!((bb.x1 - 210.0).abs() < 1e-9 && (bb.y1 - 297.0).abs() < 1e-9, "and on the right and bottom ones: {bb:?}");
+        let spec = JobSpec::new(bladepilot_machines::by_id("portrait4").unwrap());
+        assert!(plan(&design, &spec).is_ok());
     }
 
     #[test]

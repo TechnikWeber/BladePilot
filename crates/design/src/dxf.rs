@@ -123,7 +123,15 @@ pub fn import_dxf(bytes: &[u8]) -> Result<Design, Error> {
     for (what, n) in reader.skipped {
         design.warnings.push(format!("{n} {what} skipped: only lines, curves and blocks are cut"));
     }
-    Ok(design)
+    // CAD programs often write every edge as an entity of its own: join what meets.
+    let (mut tidied, report) = crate::tidy(&design, 0.01);
+    if report.joined > 0 {
+        tidied.warnings.push(format!("{} line pieces joined into continuous lines", report.joined));
+    }
+    if report.removed > 0 {
+        tidied.warnings.push(format!("{} lines drawn twice are cut once", report.removed));
+    }
+    Ok(tidied)
 }
 
 impl<'a> Reader<'a> {

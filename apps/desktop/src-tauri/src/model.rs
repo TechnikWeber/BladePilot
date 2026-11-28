@@ -130,6 +130,9 @@ pub enum MadeSpec {
         letter_spacing_mm: f64,
         #[serde(default = "line_height")]
         line_height: f64,
+        /// Weld overlapping letters into one outline (script fonts).
+        #[serde(default)]
+        weld: bool,
     },
 }
 
@@ -166,13 +169,31 @@ pub struct ColorInfo {
     pub length_mm: f64,
 }
 
-/// Blade or pen.
+/// The tool in the holder for a pass. Only the AutoBlade's depth is set by the machine; the
+/// other blades are set by hand, and a pen gets no depth at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Tool {
+    /// The AutoBlade (`blade` in files from before 0.8).
     #[default]
-    Blade,
+    #[serde(alias = "blade")]
+    AutoBlade,
+    Ratchet,
+    DeepCut,
+    Kraft,
+    Rotary,
     Pen,
+}
+
+impl Tool {
+    pub fn is_pen(self) -> bool {
+        self == Tool::Pen
+    }
+
+    /// The machine sets the depth itself (`TF`).
+    pub fn machine_sets_depth(self) -> bool {
+        self == Tool::AutoBlade
+    }
 }
 
 /// How one pass is cut.
@@ -183,7 +204,7 @@ pub struct Settings {
     /// `None` leaves the value to the machine.
     pub force: Option<u32>,
     pub speed: Option<u32>,
-    /// AutoBlade depth 0..=10.
+    /// Depth 0..=10: sent for the AutoBlade, a reminder for blades set by hand.
     pub depth: Option<u8>,
     /// How often every path is cut, 1..=10.
     pub repeats: u8,
@@ -193,7 +214,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { tool: Tool::Blade, force: None, speed: None, depth: None, repeats: 1, overcut_mm: 0.0, blade_offset_mm: 0.9 }
+        Settings { tool: Tool::AutoBlade, force: None, speed: None, depth: None, repeats: 1, overcut_mm: 0.0, blade_offset_mm: 0.9 }
     }
 }
 
@@ -293,6 +314,61 @@ pub struct ImageInfo {
     pub trace: TraceRequest,
 }
 
+/// A project to save: the front end's own state (items, settings, colours) and the designs its
+/// items use. BladePilot writes the designs' files into the project, so it opens anywhere.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRequest {
+    pub state: serde_json::Value,
+    pub designs: Vec<u32>,
+}
+
+/// A project opened again: the front end's state, and every design with the id it had when the
+/// project was saved, so the items can find theirs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedProject {
+    pub state: serde_json::Value,
+    pub designs: Vec<ReopenedDesign>,
+    /// Designs that could not be opened again.
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReopenedDesign {
+    pub saved_id: u32,
+    pub design: DesignInfo,
+}
+
+/// A design inside a project file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDesign {
+    pub id: u32,
+    pub name: String,
+    /// The design's file, base64; absent for made shapes and text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made: Option<MadeSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace: Option<TraceRequest>,
+}
+
+/// A `.bladepilot` project file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFile {
+    /// Always `bladepilot-project`.
+    pub format: String,
+    pub version: u32,
+    /// The BladePilot version that wrote it.
+    pub app: String,
+    pub state: serde_json::Value,
+    pub designs: Vec<ProjectDesign>,
+}
+
 /// One row of the colour list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -327,6 +403,21 @@ pub struct JobRequest {
     /// Print and cut: look for the registration marks first.
     #[serde(default)]
     pub print: Option<PrintSetup>,
+    /// Correction for this machine, `[right, down]` mm: every cut moves by it (from the alignment
+    /// test, or the calibration sheet in print and cut).
+    #[serde(default)]
+    pub offset_mm: Option<[f64; 2]>,
+}
+
+/// A design after tidying its lines.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TidyResult {
+    pub design: DesignInfo,
+    /// Pieces joined onto another.
+    pub joined: usize,
+    /// Lines drawn twice that are now cut once.
+    pub removed: usize,
 }
 
 /// One planned pass.

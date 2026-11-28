@@ -134,6 +134,61 @@ fn multiply(m: [f64; 6], n: [f64; 6]) -> [f64; 6] {
 
 /// The sheet as a one-page PDF: the pictures, the marks, and a short note in the bottom margin.
 pub fn sheet(paper: &Paper, marks: &Marks, pictures: &[Picture]) -> Vec<u8> {
+    sheet_with_lines(paper, marks, pictures, &[])
+}
+
+/// Where the calibration sheet's four targets are: inside the marks, clear of them, in page mm.
+pub fn calibration_targets(marks: &Marks) -> [(f64, f64); 4] {
+    let (l, t, r, b) = (marks.left_mm, marks.top_mm, marks.left_mm + marks.width_mm, marks.top_mm + marks.length_mm);
+    let (dx, dy) = (30.0, 40.0);
+    [(l + dx, t + dy), (r - dx, t + dy), (l + dx, b - dy), (r - dx, b - dy)]
+}
+
+/// The printed scales of the calibration sheet: under every target a ruler across from -5 to
+/// +5 mm, beside it one down, ticks every half millimetre. The machine then draws a cross on
+/// every target ([`calibration_crosses`]); where its lines cross the rulers is how far the cut
+/// lands from the print.
+pub fn calibration_scales(targets: &[(f64, f64)]) -> Vec<Vec<(f64, f64)>> {
+    let mut out = Vec::new();
+    for &(tx, ty) in targets {
+        // The ruler across, 3 mm below the target, and the one down, 3 mm right of it.
+        let (ry, rx) = (ty + 3.0, tx + 3.0);
+        out.push(vec![(tx - 5.0, ry), (tx + 5.0, ry)]);
+        out.push(vec![(rx, ty - 5.0), (rx, ty + 5.0)]);
+        for i in -10..=10 {
+            let v = f64::from(i) * 0.5;
+            let len = if i == 0 {
+                2.5
+            } else if i % 10 == 0 {
+                2.0
+            } else if i % 2 == 0 {
+                1.4
+            } else {
+                0.8
+            };
+            out.push(vec![(tx + v, ry), (tx + v, ry + len)]);
+            out.push(vec![(rx, ty + v), (rx + len, ty + v)]);
+        }
+        // A small ring marks the target itself.
+        let ring: Vec<(f64, f64)> = (0..=24)
+            .map(|k| {
+                let a = std::f64::consts::TAU * f64::from(k) / 24.0;
+                (tx + 1.0 * a.cos(), ty + 1.0 * a.sin())
+            })
+            .collect();
+        out.push(ring);
+    }
+    out
+}
+
+/// What the machine draws on the calibration sheet: a cross through every target, its arms long
+/// enough to reach the printed rulers.
+pub fn calibration_crosses(targets: &[(f64, f64)]) -> Vec<Vec<(f64, f64)>> {
+    targets.iter().flat_map(|&(tx, ty)| [vec![(tx - 7.0, ty), (tx + 9.0, ty)], vec![(tx, ty - 7.0), (tx, ty + 9.0)]]).collect()
+}
+
+/// The sheet with extra lines printed in black (the calibration scales).
+pub fn sheet_with_lines(paper: &Paper, marks: &Marks, pictures: &[Picture], lines: &[Vec<(f64, f64)>]) -> Vec<u8> {
     let (w_mm, h_mm) = (paper.width_mm, paper.height_mm);
     // Page mm (y down) to PDF points (y up).
     let page = [PT_PER_MM, 0.0, 0.0, -PT_PER_MM, 0.0, h_mm * PT_PER_MM];
@@ -202,6 +257,21 @@ pub fn sheet(paper: &Paper, marks: &Marks, pictures: &[Picture]) -> Vec<u8> {
     for (x, y, w, h) in marks.rects() {
         content.rect((x * PT_PER_MM) as f32, ((h_mm - y - h) * PT_PER_MM) as f32, (w * PT_PER_MM) as f32, (h * PT_PER_MM) as f32);
         content.fill_nonzero();
+    }
+    if !lines.is_empty() {
+        content.set_stroke_gray(0.0);
+        content.set_line_width((0.15 * PT_PER_MM) as f32);
+        for line in lines {
+            for (i, &(x, y)) in line.iter().enumerate() {
+                let (px, py) = ((x * PT_PER_MM) as f32, ((h_mm - y) * PT_PER_MM) as f32);
+                if i == 0 {
+                    content.move_to(px, py);
+                } else {
+                    content.line_to(px, py);
+                }
+            }
+            content.stroke();
+        }
     }
     let note = "BladePilot print and cut - print at 100 % (actual size) and place the sheet at the top left of the mat";
     content.set_fill_gray(0.45);

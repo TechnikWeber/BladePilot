@@ -117,6 +117,8 @@ pub struct TextSpec {
     pub letter_spacing_mm: f64,
     /// Distance from one line to the next as a multiple of the size.
     pub line_height: f64,
+    /// Weld letters that overlap into one outline (script fonts).
+    pub weld: bool,
 }
 
 /// The fonts installed on the system, with the generic families (`sans-serif`, `serif`, …) set
@@ -186,6 +188,9 @@ pub fn make_text(spec: &TextSpec, fonts: &Arc<usvg::fontdb::Database>) -> Result
     };
     design.translate(-bb.x0, -bb.y0);
     design.page_mm = Some((bb.width(), bb.height()));
+    if spec.weld {
+        design.shapes = crate::weld(&design.shapes);
+    }
     Ok(design)
 }
 
@@ -237,8 +242,11 @@ mod tests {
             align: TextAlign::Center,
             letter_spacing_mm: 0.0,
             line_height: 1.2,
+            weld: false,
         };
         let d = make_text(&text, &fonts).expect("sets the text");
+        let welded = make_text(&TextSpec { weld: true, ..text.clone() }, &fonts).expect("welds the text");
+        assert_eq!(welded.shapes.len(), 1, "one colour, one welded shape");
         assert!(!d.shapes.is_empty());
         let bb = d.bbox().expect("bbox");
         assert!(bb.x0.abs() < 1e-6 && bb.y0.abs() < 1e-6);

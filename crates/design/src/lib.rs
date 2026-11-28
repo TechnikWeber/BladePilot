@@ -13,12 +13,17 @@ pub mod dxf;
 pub mod make;
 pub mod pdf;
 pub mod raster;
+pub mod strokes;
+pub mod tidy;
 pub mod weed;
+pub mod weld;
 pub use dxf::import_dxf;
 pub use make::{ShapeKind, ShapeSpec, TextAlign, TextSpec, font_families, make_shape, make_text, system_fonts};
 pub use pdf::import_pdf;
 pub use raster::{Raster, TraceSettings, TraceSource, contour, decode_image, import_image, trace_raster};
+pub use tidy::{TidyReport, tidy};
 pub use weed::{WeedSpec, weed_lines};
+pub use weld::weld;
 
 /// Millimetres per CSS pixel: SVG user units are 1/96 in.
 pub const MM_PER_PX: f64 = 25.4 / 96.0;

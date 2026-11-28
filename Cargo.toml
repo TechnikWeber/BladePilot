@@ -38,6 +38,7 @@ miniz_oxide = "0.9"
 base64 = "0.23"
 dxf = "0.6"
 lopdf = { version = "0.47", default-features = false }
+i_overlay = "9"
 
 bladepilot-machines = { path = "crates/machines" }
 bladepilot-design = { path = "crates/design" }

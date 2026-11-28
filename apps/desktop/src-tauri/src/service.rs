@@ -43,6 +43,8 @@ struct Stored {
     trace: Option<TraceSettings>,
     /// What a made shape or text was made from.
     made: Option<MadeSpec>,
+    /// The file it was opened from, to save it in a project.
+    source: Option<Vec<u8>>,
 }
 
 /// Tolerance for outlines that are only measured or drawn, mm.
@@ -53,6 +55,57 @@ pub const VIRTUAL_PACE_MM_S: (f64, f64) = (120.0, 360.0);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The last things that happened (opened files, searches, jobs, errors), for the diagnosis a
+/// user can save and send along with a bug report.
+static LOG: Mutex<std::collections::VecDeque<String>> = Mutex::new(std::collections::VecDeque::new());
+
+/// Notes a line in the log, with the time since the app started.
+pub fn note(line: impl Into<String>) {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let t = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64();
+    let mut log = lock(&LOG);
+    if log.len() >= 400 {
+        log.pop_front();
+    }
+    log.push_back(format!("{t:9.1} s  {}", line.into()));
+}
+
+/// What a bug report needs: versions, the system, the machines found, and the log.
+pub fn diagnostics(usb_access: &crate::model::UsbAccess) -> String {
+    let mut out = String::new();
+    let info = app_info();
+    out.push_str(&format!("BladePilot {}\n", info.version));
+    out.push_str(&format!("System: {} {} ({})\n", std::env::consts::OS, std::env::consts::ARCH, info.language));
+    for key in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "APPIMAGE"] {
+        if let Ok(v) = std::env::var(key) {
+            out.push_str(&format!("{key}: {v}\n"));
+        }
+    }
+    out.push_str(&format!("USB access: needed {}, rule installed {}\n", usb_access.needed, usb_access.installed));
+    match scan_devices() {
+        Ok(found) if found.is_empty() => out.push_str("USB: no cutting machine found\n"),
+        Ok(found) => {
+            for d in found {
+                out.push_str(&format!("USB: {} ({:04x}:{:04x}) at {}:{}\n", d.name, d.vendor_id, d.product_id, d.bus, d.address));
+            }
+        }
+        Err(e) => out.push_str(&format!("USB: {e}\n")),
+    }
+    #[cfg(target_os = "linux")]
+    if let Ok(o) = bladepilot_device::host_command("bluetoothctl").arg("show").output() {
+        let text = String::from_utf8_lossy(&o.stdout);
+        for line in text.lines().filter(|l| l.contains("Powered") || l.starts_with("Controller")) {
+            out.push_str(&format!("Bluetooth: {}\n", line.trim()));
+        }
+    }
+    out.push_str("\nLog:\n");
+    for line in lock(&LOG).iter() {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 /// The app's state: the imported designs and the job that runs.
@@ -347,11 +400,12 @@ pub fn design_info(id: u32, name: &str, design: &Design) -> DesignInfo {
 }
 
 fn cut_settings(s: &Settings) -> CutSettings {
-    let pen = s.tool == Tool::Pen;
+    let pen = s.tool.is_pen();
     CutSettings {
         force: s.force,
         speed: s.speed,
-        depth: if pen { None } else { s.depth.map(|d| d.min(10)) },
+        // Only the AutoBlade is set by the machine; other blades are set by hand.
+        depth: if s.tool.machine_sets_depth() { s.depth.map(|d| d.min(10)) } else { None },
         passes: s.repeats.clamp(1, 10),
         pen,
         overcut_mm: if pen { 0.0 } else { s.overcut_mm.clamp(0.0, 2.0) },
@@ -359,21 +413,29 @@ fn cut_settings(s: &Settings) -> CutSettings {
     }
 }
 
-fn settings_of(c: &CutSettings) -> Settings {
-    Settings {
-        tool: if c.pen { Tool::Pen } else { Tool::Blade },
-        force: c.force,
-        speed: c.speed,
-        depth: c.depth,
-        repeats: c.passes,
-        overcut_mm: c.overcut_mm,
-        blade_offset_mm: c.blade_offset_mm,
+/// The settings the job asks for a pass: its colour's row, else the job's own.
+fn pass_settings(job: &JobRequest, color: Option<Rgb>) -> Settings {
+    if job.by_color
+        && let Some(row) = job.colors.iter().find(|c| parse_color(c.color.as_deref()).ok() == Some(color))
+    {
+        return row.settings;
     }
+    job.settings
+}
+
+/// Passes that need another tool than the one before: pen and blade, or one blade for another.
+fn tool_changes(plan: &Plan, job: &JobRequest) -> Vec<usize> {
+    let tools: Vec<Tool> = plan.passes.iter().map(|p| pass_settings(job, p.color).tool).collect();
+    let mut changes = plan.tool_changes();
+    changes.extend((1..tools.len()).filter(|&i| tools[i] != tools[i - 1]));
+    changes.sort_unstable();
+    changes.dedup();
+    changes
 }
 
 /// Which passes wait before they start: every tool change, and the colours that ask for it.
 fn pauses(plan: &Plan, job: &JobRequest) -> Result<Vec<usize>, ApiError> {
-    let changes = plan.tool_changes();
+    let changes = tool_changes(plan, job);
     let mut asked = Vec::new();
     for c in job.colors.iter().filter(|c| c.pause_before) {
         asked.push(parse_color(c.color.as_deref())?);
@@ -381,8 +443,8 @@ fn pauses(plan: &Plan, job: &JobRequest) -> Result<Vec<usize>, ApiError> {
     Ok((1..plan.passes.len()).filter(|i| changes.contains(i) || (job.by_color && asked.contains(&plan.passes[*i].color))).collect())
 }
 
-fn plan_info(plan: &Plan, program: &Program, pause_before: &[usize]) -> PlanInfo {
-    let changes = plan.tool_changes();
+fn plan_info(plan: &Plan, program: &Program, pause_before: &[usize], job: &JobRequest) -> PlanInfo {
+    let changes = tool_changes(plan, job);
     PlanInfo {
         passes: plan
             .passes
@@ -390,7 +452,7 @@ fn plan_info(plan: &Plan, program: &Program, pause_before: &[usize]) -> PlanInfo
             .enumerate()
             .map(|(i, p)| PassInfo {
                 color: hex(p.color),
-                settings: settings_of(&p.settings),
+                settings: Settings { repeats: p.settings.passes, ..pass_settings(job, p.color) },
                 paths: p.paths.len(),
                 cut_mm: f64::from(p.settings.passes.max(1)) * p.paths.iter().map(polyline_length).sum::<f64>(),
                 pause_before: pause_before.contains(&i),
@@ -446,15 +508,15 @@ impl Service {
     }
 
     fn keep(&self, name: &str, design: Design, svg: Option<Vec<u8>>) -> DesignInfo {
-        self.keep_made(name, design, svg, None)
+        self.keep_made(name, design, svg, None, None)
     }
 
-    fn keep_made(&self, name: &str, design: Design, svg: Option<Vec<u8>>, made: Option<MadeSpec>) -> DesignInfo {
+    fn keep_made(&self, name: &str, design: Design, svg: Option<Vec<u8>>, made: Option<MadeSpec>, source: Option<Vec<u8>>) -> DesignInfo {
         let id = self.next_design.fetch_add(1, Ordering::Relaxed);
         let trace = design.raster.as_ref().map(TraceSettings::for_raster);
         // Designs without artwork of their own print as their outlines.
         let svg = if svg.is_none() && design.raster.is_none() { svg_of(&design) } else { svg };
-        let stored = Stored { name: name.to_string(), design, svg, trace, made };
+        let stored = Stored { name: name.to_string(), design, svg, trace, made, source };
         let info = stored_info(id, &stored);
         lock(&self.designs).insert(id, Arc::new(stored));
         info
@@ -471,7 +533,99 @@ impl Service {
     pub fn import_design(&self, name: &str, bytes: &[u8]) -> Result<DesignInfo, ApiError> {
         let design = bladepilot_design::import(bytes, Some(name))?;
         let svg = (design.format == bladepilot_design::Format::Svg).then(|| bytes.to_vec());
-        Ok(self.keep(name, design, svg))
+        note(format!("opened {name} ({}, {} shapes)", design.format.name(), design.shapes.len()));
+        Ok(self.keep_made(name, design, svg, None, Some(bytes.to_vec())))
+    }
+
+    /// A project file for the front end's state and the designs it names.
+    pub fn project_bytes(&self, request: &crate::model::ProjectRequest) -> Result<Vec<u8>, ApiError> {
+        use base64::Engine as _;
+        let mut designs = Vec::new();
+        for &id in &request.designs {
+            let stored = self.stored(id)?;
+            // A made design is made again; one changed in BladePilot (lines joined, welded) is kept
+            // as an SVG of its outlines; everything else as the file it came from.
+            let source = if stored.made.is_some() {
+                None
+            } else {
+                let bytes = stored.source.clone().or_else(|| svg_of(&stored.design));
+                bytes.map(|b| base64::engine::general_purpose::STANDARD.encode(b))
+            };
+            designs.push(crate::model::ProjectDesign {
+                id,
+                name: if stored.source.is_none() && stored.made.is_none() {
+                    format!("{}.svg", stored.name.trim_end_matches(".svg"))
+                } else {
+                    stored.name.clone()
+                },
+                source,
+                made: stored.made.clone(),
+                trace: stored.trace.as_ref().map(trace_request),
+            });
+        }
+        let file = crate::model::ProjectFile {
+            format: "bladepilot-project".to_string(),
+            version: 1,
+            app: env!("CARGO_PKG_VERSION").to_string(),
+            state: request.state.clone(),
+            designs,
+        };
+        serde_json::to_vec_pretty(&file).map_err(|e| ApiError::new("project", e.to_string()))
+    }
+
+    /// Saves a project to `path` (written next to it first, then moved, so a crash never leaves
+    /// half a file).
+    pub fn save_project(&self, path: &Path, request: &crate::model::ProjectRequest) -> Result<(), ApiError> {
+        let bytes = self.project_bytes(request)?;
+        let tmp = path.with_extension("bladepilot.part");
+        std::fs::write(&tmp, &bytes)
+            .and_then(|()| std::fs::rename(&tmp, path))
+            .map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))?;
+        note(format!("saved the project {}", path.display()));
+        Ok(())
+    }
+
+    /// Opens a project: every design is opened (or made) again and gets a new id.
+    pub fn open_project(&self, path: &Path) -> Result<crate::model::OpenedProject, ApiError> {
+        let bytes = std::fs::read(path).map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))?;
+        let opened = self.project_from_bytes(&bytes)?;
+        note(format!("opened the project {}", path.display()));
+        Ok(opened)
+    }
+
+    pub fn project_from_bytes(&self, bytes: &[u8]) -> Result<crate::model::OpenedProject, ApiError> {
+        use base64::Engine as _;
+        let file: crate::model::ProjectFile = serde_json::from_slice(bytes).map_err(|e| ApiError::new("project", e.to_string()))?;
+        if file.format != "bladepilot-project" {
+            return Err(ApiError::new("project", "not a BladePilot project"));
+        }
+        if file.version > 1 {
+            return Err(ApiError::new("projectVersion", format!("the project was saved by BladePilot {}; update to open it", file.app)));
+        }
+        let mut designs = Vec::new();
+        let mut warnings = Vec::new();
+        for d in &file.designs {
+            let result = if let Some(spec) = &d.made {
+                self.make_design(spec)
+            } else if let Some(source) = &d.source {
+                match base64::engine::general_purpose::STANDARD.decode(source) {
+                    Ok(bytes) => self.import_design(&d.name, &bytes),
+                    Err(e) => Err(ApiError::new("project", e.to_string())),
+                }
+            } else {
+                Err(ApiError::new("project", "the design has no file"))
+            };
+            match result {
+                Ok(mut info) => {
+                    if let (Some(trace), Some(_)) = (&d.trace, &info.image) {
+                        info = self.trace_design(info.id, trace)?;
+                    }
+                    designs.push(crate::model::ReopenedDesign { saved_id: d.id, design: info });
+                }
+                Err(e) => warnings.push(format!("{}: {}", d.name, e.message)),
+            }
+        }
+        Ok(crate::model::OpenedProject { state: file.state, designs, warnings })
     }
 
     /// The fonts installed on the system, loaded once.
@@ -491,7 +645,7 @@ impl Service {
                 let s = shape_spec(spec).ok_or_else(|| ApiError::new("badShape", format!("unknown shape `{shape}`")))?;
                 (shape.clone(), bladepilot_design::make_shape(&s))
             }
-            MadeSpec::Text { text, family, size_mm, bold, italic, align, letter_spacing_mm, line_height } => {
+            MadeSpec::Text { text, family, size_mm, bold, italic, align, letter_spacing_mm, line_height, weld } => {
                 let align = match align.as_str() {
                     "center" => bladepilot_design::TextAlign::Center,
                     "right" => bladepilot_design::TextAlign::Right,
@@ -506,12 +660,84 @@ impl Service {
                     align,
                     letter_spacing_mm: *letter_spacing_mm,
                     line_height: *line_height,
+                    weld: *weld,
                 };
                 let name: String = text.lines().next().unwrap_or_default().chars().take(24).collect();
                 (name, bladepilot_design::make_text(&t, self.font_db())?)
             }
         };
-        Ok(self.keep_made(&name, design, None, Some(spec.clone())))
+        Ok(self.keep_made(&name, design, None, Some(spec.clone()), None))
+    }
+
+    /// The alignment test for a sheet of this size, its top-left corner at the page origin.
+    pub fn alignment_design(&self, width_mm: f64, height_mm: f64) -> DesignInfo {
+        let design = bladepilot_job::alignment_pattern(width_mm.clamp(60.0, 2000.0), height_mm.clamp(60.0, 20000.0));
+        self.keep("alignment-test", design, None)
+    }
+
+    /// Welds what the items cut into one new design, in mat millimetres.
+    pub fn weld_items(&self, items: &[PlacedItem]) -> Result<DesignInfo, ApiError> {
+        let placed = self.placed(items)?;
+        let shapes = bladepilot_design::weld(&placed.shapes);
+        if shapes.is_empty() {
+            return Err(ApiError::new("empty", "there is nothing to weld"));
+        }
+        let design = Design { format: bladepilot_design::Format::Made, shapes, ..Design::default() };
+        note(format!("welded {} items", items.len()));
+        Ok(self.keep("welded", design, None))
+    }
+
+    /// Joins line pieces that meet and leaves out lines drawn twice; the design keeps its id.
+    pub fn tidy_design(&self, id: u32) -> Result<crate::model::TidyResult, ApiError> {
+        let stored = self.stored(id)?;
+        if stored.design.raster.is_some() {
+            return Err(ApiError::new("notForPictures", "the lines of a picture are traced, not drawn"));
+        }
+        let (design, report) = bladepilot_design::tidy(&stored.design, 0.05);
+        // Changed in BladePilot: a project keeps the tidied lines, not the file.
+        let source = if report.joined + report.removed > 0 { None } else { stored.source.clone() };
+        let svg = if stored.svg.is_some() && report.joined + report.removed == 0 { stored.svg.clone() } else { svg_of(&design) };
+        let updated = Stored { name: stored.name.clone(), design, svg, trace: None, made: stored.made.clone(), source };
+        let info = stored_info(id, &updated);
+        lock(&self.designs).insert(id, Arc::new(updated));
+        lock(&self.contours).retain(|(d, _), _| *d != id);
+        Ok(crate::model::TidyResult { design: info, joined: report.joined, removed: report.removed })
+    }
+
+    /// Print and cut calibration: the sheet with marks and four printed rulers, as a PDF.
+    pub fn calibration_sheet(&self, job: &JobRequest, path: &Path) -> Result<(), ApiError> {
+        let (paper, marks) = self.sheet_marks(job)?;
+        let lines = bladepilot_print::calibration_scales(&bladepilot_print::calibration_targets(&marks));
+        let pdf = bladepilot_print::sheet_with_lines(&paper, &marks, &[], &lines);
+        std::fs::write(path, pdf).map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))
+    }
+
+    /// What the machine draws on the calibration sheet, as a design in mat millimetres.
+    pub fn calibration_design(&self, job: &JobRequest) -> Result<DesignInfo, ApiError> {
+        let (_, marks) = self.sheet_marks(job)?;
+        let crosses = bladepilot_print::calibration_crosses(&bladepilot_print::calibration_targets(&marks));
+        let mut path = BezPath::new();
+        for line in crosses {
+            for (i, &p) in line.iter().enumerate() {
+                if i == 0 {
+                    path.move_to(p);
+                } else {
+                    path.line_to(p);
+                }
+            }
+        }
+        let design = Design { format: bladepilot_design::Format::Made, shapes: vec![Shape { path, stroke: None, fill: None }], ..Design::default() };
+        Ok(self.keep("calibration", design, None))
+    }
+
+    fn sheet_marks(&self, job: &JobRequest) -> Result<(bladepilot_print::Paper, bladepilot_print::Marks), ApiError> {
+        let machine =
+            bladepilot_machines::by_id(&job.machine).ok_or_else(|| ApiError::new("unknownMachine", format!("unknown machine `{}`", job.machine)))?;
+        let mat = Mat::parse(&job.mat).ok_or_else(|| ApiError::new("unknownMat", format!("unknown mat `{}`", job.mat)))?;
+        let print = job.print.as_ref().ok_or_else(|| ApiError::new("noPrint", "print and cut is off"))?;
+        let marks = self.marks(print, machine, mat)?;
+        let paper = bladepilot_print::paper(&print.paper).ok_or_else(|| ApiError::new("badPaper", "unknown paper"))?;
+        Ok((paper, marks))
     }
 
     /// The test cut pattern as a design (top-left corner at the page origin), kept once.
@@ -547,7 +773,7 @@ impl Service {
         let mut design = stored.design.clone();
         design.shapes = bladepilot_design::trace_raster(raster, &settings);
         design.warnings.clear();
-        let updated = Stored { name: stored.name.clone(), design, svg: None, trace: Some(settings), made: None };
+        let updated = Stored { name: stored.name.clone(), design, svg: None, trace: Some(settings), made: None, source: stored.source.clone() };
         let info = stored_info(id, &updated);
         lock(&self.designs).insert(id, Arc::new(updated));
         lock(&self.contours).retain(|(d, _), _| *d != id);
@@ -672,7 +898,13 @@ impl Service {
         let machine =
             bladepilot_machines::by_id(&job.machine).ok_or_else(|| ApiError::new("unknownMachine", format!("unknown machine `{}`", job.machine)))?;
         let mat = Mat::parse(&job.mat).ok_or_else(|| ApiError::new("unknownMat", format!("unknown mat `{}`", job.mat)))?;
-        let design = self.placed(&job.items)?;
+        let mut design = self.placed(&job.items)?;
+        if let Some([dx, dy]) = job.offset_mm
+            && dx.is_finite()
+            && dy.is_finite()
+        {
+            design.translate(dx.clamp(-20.0, 20.0), dy.clamp(-20.0, 20.0));
+        }
         let mut spec = JobSpec::new(machine);
         spec.mat = mat;
         if let Some(print) = &job.print {
@@ -715,7 +947,7 @@ impl Service {
     /// Plans a job: passes in cutting order, lengths, pauses.
     pub fn plan(&self, job: &JobRequest) -> Result<PlanInfo, ApiError> {
         let p = self.prepare(job)?;
-        Ok(plan_info(&p.plan, &p.program, &p.options.pause_before))
+        Ok(plan_info(&p.plan, &p.program, &p.options.pause_before, job))
     }
 
     /// Plans a job and runs it on the virtual plotter, for the animated preview.
@@ -726,10 +958,18 @@ impl Service {
         let plotter = session.into_transport().plotter;
         let passes = stroke_passes(&p.plan, plotter.strokes());
         let stats = plotter.stats();
-        // With registration the machine counts from the first mark: back to mat coordinates.
-        let (dx, dy) = p.plan.registration.map_or((0.0, 0.0), |r| (r.origin_right_mm, r.origin_down_mm));
+        // With registration the machine counts from the first mark: back to mat coordinates; and
+        // the machine's correction is taken off again, so the preview lies on the designs.
+        let (mut dx, mut dy) = p.plan.registration.map_or((0.0, 0.0), |r| (r.origin_right_mm, r.origin_down_mm));
+        if let Some([ox, oy]) = job.offset_mm
+            && ox.is_finite()
+            && oy.is_finite()
+        {
+            dx -= ox.clamp(-20.0, 20.0);
+            dy -= oy.clamp(-20.0, 20.0);
+        }
         Ok(Simulation {
-            plan: plan_info(&p.plan, &p.program, &p.options.pause_before),
+            plan: plan_info(&p.plan, &p.program, &p.options.pause_before, job),
             strokes: plotter
                 .strokes()
                 .iter()
@@ -757,13 +997,23 @@ impl Service {
             *current = Some(Arc::clone(&control));
         }
         let service = Arc::clone(self);
+        note(format!("job for the {} on the {} mat, {} items, to {target:?}", job.machine, job.mat, job.items.len()));
         let spawned = std::thread::Builder::new().name("bladepilot-job".to_string()).spawn(move || {
             let result = service.prepare(&job).and_then(|p| service.run(&p, &target, &control, &mut emit));
             *lock(&service.job) = None;
             match result {
-                Ok(()) => emit(JobEvent::Done),
-                Err(e) if e.code == "stopped" => emit(JobEvent::Stopped),
-                Err(error) => emit(JobEvent::Failed { error }),
+                Ok(()) => {
+                    note("job done");
+                    emit(JobEvent::Done);
+                }
+                Err(e) if e.code == "stopped" => {
+                    note("job stopped");
+                    emit(JobEvent::Stopped);
+                }
+                Err(error) => {
+                    note(format!("job failed: {} ({})", error.message, error.code));
+                    emit(JobEvent::Failed { error });
+                }
             }
         });
         if let Err(e) = spawned {
@@ -926,7 +1176,7 @@ impl Transport for Paced {
 
 /// The arguments that name existing files with a design extension.
 pub fn startup_files(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std::path::PathBuf> {
-    const EXTENSIONS: [&str; 12] = ["svg", "svgz", "studio", "studio3", "pdf", "dxf", "png", "jpg", "jpeg", "webp", "bmp", "gif"];
+    const EXTENSIONS: [&str; 13] = ["bladepilot", "svg", "svgz", "studio", "studio3", "pdf", "dxf", "png", "jpg", "jpeg", "webp", "bmp", "gif"];
     args.map(std::path::PathBuf::from)
         .filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())))
         .filter(|p| p.is_file())
@@ -935,7 +1185,8 @@ pub fn startup_files(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std:
 
 /// The cutting machines on USB.
 pub fn scan_devices() -> Result<Vec<DeviceInfo>, ApiError> {
-    Ok(usb::scan()?
+    let found = usb::scan().inspect_err(|e| note(format!("USB search failed: {e}")))?;
+    Ok(found
         .into_iter()
         .map(|f| DeviceInfo {
             machine: f.machine.map(|m| m.id.to_string()),
@@ -952,7 +1203,9 @@ pub fn scan_devices() -> Result<Vec<DeviceInfo>, ApiError> {
 
 /// The cutting machines in Bluetooth range (about ten seconds).
 pub fn scan_bluetooth() -> Result<Vec<DeviceInfo>, ApiError> {
-    Ok(bluetooth::scan()?
+    let found = bluetooth::scan().inspect_err(|e| note(format!("Bluetooth search failed: {e}")))?;
+    note(format!("Bluetooth search: {}", found.iter().map(|f| format!("{} {}", f.name, f.address)).collect::<Vec<_>>().join(", ")));
+    Ok(found
         .into_iter()
         .map(|f| DeviceInfo {
             machine: f.machine.map(|m| m.id.to_string()),
@@ -1051,6 +1304,7 @@ mod tests {
                 crate::model::ColorRequest { color: Some("#ff0000".into()), settings: pen, skip: false, pause_before: false },
             ],
             print: None,
+            offset_mm: None,
         }
     }
 
@@ -1264,6 +1518,10 @@ mod tests {
         let contours: std::collections::BTreeMap<String, String> =
             (0..=6).map(|mm| (mm.to_string(), service.contour_path(id, f64::from(mm)).unwrap())).collect();
         check_file(&format!("{ui}/mock/demo-contours.json"), &(serde_json::to_string_pretty(&contours).unwrap() + "\n"));
+        // The alignment test for both papers.
+        let align: std::collections::BTreeMap<&str, DesignInfo> =
+            [("a4", Service::new().alignment_design(210.0, 297.0)), ("letter", Service::new().alignment_design(215.9, 279.4))].into_iter().collect();
+        check_file(&format!("{ui}/mock/alignment.json"), &(serde_json::to_string(&align).unwrap() + "\n"));
     }
 
     #[test]
@@ -1287,6 +1545,7 @@ mod tests {
             settings: Settings { force: Some(8), ..Settings::default() },
             colors: Vec::new(),
             print: None,
+            offset_mm: None,
         };
         let plan = service.plan(&job).unwrap();
         assert_eq!(plan.passes.len(), 1);
@@ -1307,6 +1566,7 @@ mod tests {
             settings: Settings::default(),
             colors: Vec::new(),
             print,
+            offset_mm: None,
         };
         (job, design.id)
     }
@@ -1324,6 +1584,7 @@ mod tests {
             settings: Settings::default(),
             colors: Vec::new(),
             print: None,
+            offset_mm: None,
         }
     }
 
@@ -1363,12 +1624,91 @@ mod tests {
             align: "left".into(),
             letter_spacing_mm: 0.0,
             line_height: 1.2,
+            weld: false,
         };
         let plan = service.plan(&made_job(&service, spec.clone(), None)).unwrap();
         assert_eq!(plan.passes.len(), 1);
         let MadeSpec::Text { family, size_mm, bold, italic, align, letter_spacing_mm, line_height, .. } = spec else { unreachable!() };
-        let empty = MadeSpec::Text { text: "  ".into(), family, size_mm, bold, italic, align, letter_spacing_mm, line_height };
+        let empty = MadeSpec::Text { text: "  ".into(), family, size_mm, bold, italic, align, letter_spacing_mm, line_height, weld: false };
         assert_eq!(service.make_design(&empty).unwrap_err().code, "text");
+    }
+
+    #[test]
+    fn a_project_saves_its_designs_and_opens_them_again_with_new_ids() {
+        let service = Service::new();
+        let svg = service.import_design("T3-label.svg", &fixture("T3-label.svg")).unwrap();
+        let made = service.make_design(&star()).unwrap();
+        let state = serde_json::json!({ "items": [{ "design": svg.id }, { "design": made.id }] });
+        let request = crate::model::ProjectRequest { state: state.clone(), designs: vec![svg.id, made.id] };
+        let bytes = service.project_bytes(&request).unwrap();
+        let other = Service::new();
+        // A design opened before, so the ids differ.
+        other.make_design(&star()).unwrap();
+        let opened = other.project_from_bytes(&bytes).unwrap();
+        assert_eq!(opened.state, state);
+        assert!(opened.warnings.is_empty(), "{:?}", opened.warnings);
+        assert_eq!(opened.designs.len(), 2);
+        assert_eq!(opened.designs[0].saved_id, svg.id);
+        assert_eq!(opened.designs[0].design.shapes, svg.shapes, "the same outlines");
+        assert_ne!(opened.designs[0].design.id, svg.id);
+        assert_eq!(opened.designs[1].design.made, made.made);
+        assert_eq!(other.project_from_bytes(b"{}").unwrap_err().code, "project");
+    }
+
+    #[test]
+    fn welding_two_items_makes_one_outline_and_tidying_joins_pieces() {
+        let service = Service::new();
+        let square = |x: f64| PlacedItem {
+            design: service
+                .make_design(&MadeSpec::Shape { shape: "rectangle".into(), width_mm: 20.0, height_mm: 20.0, corner_mm: 0.0, sides: 5, inner: 0.5 })
+                .unwrap()
+                .id,
+            matrix: [1.0, 0.0, 0.0, 1.0, x, 10.0],
+            cut: ItemCut::default(),
+            print: false,
+            weed: None,
+        };
+        let welded = service.weld_items(&[square(10.0), square(20.0)]).unwrap();
+        assert_eq!(welded.shapes.len(), 1);
+        assert!((welded.bbox[0] - 10.0).abs() < 1e-6 && (welded.bbox[2] - 40.0).abs() < 1e-6, "{:?}", welded.bbox);
+        assert_eq!(welded.shapes[0].d.matches('M').count(), 1, "one outline");
+
+        let dxf =
+            b"0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n0\n0\nLINE\n8\n0\n10\n10\n20\n0\n11\n10\n21\n10\n0\nENDSEC\n0\nEOF\n";
+        let d = service.import_design("corner.dxf", dxf).unwrap();
+        assert_eq!(d.shapes[0].d.matches('M').count(), 1, "the DXF's pieces are joined on import");
+        let tidied = service.tidy_design(d.id).unwrap();
+        assert_eq!(tidied.joined, 0, "nothing left to join");
+    }
+
+    #[test]
+    fn the_correction_moves_the_cut_but_not_the_preview() {
+        let service = Service::new();
+        let mut job = made_job(&service, star(), None);
+        let plain = service.plan(&job).unwrap().bbox.unwrap();
+        job.offset_mm = Some([1.5, -1.0]);
+        let moved = service.plan(&job).unwrap().bbox.unwrap();
+        assert!((moved[0] - plain[0] - 1.5).abs() < 1e-6 && (moved[1] - plain[1] + 1.0).abs() < 1e-6, "{plain:?} {moved:?}");
+        let sim = service.simulate(&job).unwrap();
+        let first = sim.strokes.iter().find(|s| s.cut).unwrap();
+        assert!(first.points[0] >= plain[0] - 0.02 && first.points[0] <= plain[2] + 0.02, "the preview stays on the design");
+    }
+
+    #[test]
+    fn calibration_sheet_and_crosses_for_print_and_cut() {
+        let service = Service::new();
+        let (mut job, _) = demo_job(&service, ItemCut::Contour { offset_mm: 2.0 }, Some(PrintSetup { paper: "a4".into(), inset_mm: 10.0 }));
+        let crosses = service.calibration_design(&job).unwrap();
+        job.items =
+            vec![PlacedItem { design: crosses.id, matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], cut: ItemCut::default(), print: false, weed: None }];
+        assert!(service.plan(&job).is_ok(), "the crosses lie inside the marks");
+        let path = std::env::temp_dir().join(format!("bladepilot-calibration-{}.pdf", std::process::id()));
+        service.calibration_sheet(&job, &path).unwrap();
+        let pdf = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert!(pdf.starts_with(b"%PDF"));
+        let align = service.alignment_design(210.0, 297.0);
+        assert!((align.bbox[2] - 210.0).abs() < 1e-6 && (align.bbox[3] - 297.0).abs() < 1e-6);
     }
 
     #[test]

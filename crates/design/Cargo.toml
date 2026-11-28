@@ -21,3 +21,4 @@ image = { workspace = true }
 tiny-skia = { workspace = true }
 dxf = { workspace = true }
 lopdf = { workspace = true }
+i_overlay = { workspace = true }

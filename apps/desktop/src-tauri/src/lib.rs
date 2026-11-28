@@ -9,16 +9,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::State;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, State};
 
 pub mod model;
 pub mod service;
 pub mod udev;
 
 use model::{
-    ApiError, AppInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, MadeSpec, PlanInfo, Simulation, Target,
-    TraceRequest, UsbAccess,
+    ApiError, AppInfo, DesignInfo, DeviceInfo, DeviceStatus, JobAction, JobEvent, JobRequest, MachineInfo, MadeSpec, OpenedProject, PlacedItem,
+    PlanInfo, ProjectRequest, Simulation, Target, TidyResult, TraceRequest, UsbAccess,
 };
 use service::Service;
 
@@ -107,6 +107,95 @@ async fn make_design(service: Shared<'_>, spec: MadeSpec) -> Result<DesignInfo, 
 }
 
 #[tauri::command]
+async fn save_project(service: Shared<'_>, path: PathBuf, project: ProjectRequest) -> Result<(), ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.save_project(&path, &project)).await
+}
+
+#[tauri::command]
+async fn open_project(service: Shared<'_>, path: PathBuf) -> Result<OpenedProject, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.open_project(&path)).await
+}
+
+/// Where the last session is kept between starts.
+fn autosave_path(app: &AppHandle) -> Result<PathBuf, ApiError> {
+    let dir = app.path().app_data_dir().map_err(|e| ApiError::new("io", e.to_string()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| ApiError::new("io", format!("{}: {e}", dir.display())))?;
+    Ok(dir.join("last-session.bladepilot"))
+}
+
+#[tauri::command]
+async fn autosave(app: AppHandle, service: Shared<'_>, project: ProjectRequest) -> Result<(), ApiError> {
+    let service = Arc::clone(&service);
+    let path = autosave_path(&app)?;
+    off_main(move || {
+        let bytes = service.project_bytes(&project)?;
+        std::fs::write(&path, bytes).map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn restore_autosave(app: AppHandle, service: Shared<'_>) -> Result<Option<OpenedProject>, ApiError> {
+    let service = Arc::clone(&service);
+    let path = autosave_path(&app)?;
+    off_main(move || match std::fs::read(&path) {
+        Ok(bytes) => service.project_from_bytes(&bytes).map(Some),
+        Err(_) => Ok(None),
+    })
+    .await
+}
+
+#[tauri::command]
+fn discard_autosave(app: AppHandle) -> Result<(), ApiError> {
+    let path = autosave_path(&app)?;
+    match std::fs::remove_file(&path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(ApiError::new("io", e.to_string())),
+        _ => Ok(()),
+    }
+}
+
+#[tauri::command]
+async fn diagnostics() -> Result<String, ApiError> {
+    off_main(|| Ok(service::diagnostics(&udev::status()))).await
+}
+
+#[tauri::command]
+async fn save_text(path: PathBuf, text: String) -> Result<(), ApiError> {
+    off_main(move || std::fs::write(&path, text).map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))).await
+}
+
+#[tauri::command]
+fn alignment_design(service: Shared<'_>, width_mm: f64, height_mm: f64) -> DesignInfo {
+    service.alignment_design(width_mm, height_mm)
+}
+
+#[tauri::command]
+async fn weld_items(service: Shared<'_>, items: Vec<PlacedItem>) -> Result<DesignInfo, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.weld_items(&items)).await
+}
+
+#[tauri::command]
+async fn tidy_design(service: Shared<'_>, id: u32) -> Result<TidyResult, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.tidy_design(id)).await
+}
+
+#[tauri::command]
+async fn calibration_sheet(service: Shared<'_>, job: JobRequest, path: PathBuf) -> Result<(), ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.calibration_sheet(&job, &path)).await
+}
+
+#[tauri::command]
+async fn calibration_design(service: Shared<'_>, job: JobRequest) -> Result<DesignInfo, ApiError> {
+    let service = Arc::clone(&service);
+    off_main(move || service.calibration_design(&job)).await
+}
+
+#[tauri::command]
 fn test_design(service: Shared<'_>) -> DesignInfo {
     service.test_design()
 }
@@ -181,6 +270,18 @@ pub fn run() {
             open_design,
             import_design,
             test_design,
+            alignment_design,
+            weld_items,
+            tidy_design,
+            calibration_sheet,
+            calibration_design,
+            save_project,
+            open_project,
+            autosave,
+            restore_autosave,
+            discard_autosave,
+            diagnostics,
+            save_text,
             fonts,
             make_design,
             trace_design,
