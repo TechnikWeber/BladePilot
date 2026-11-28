@@ -14,6 +14,9 @@ maintainer's computers.
 - Release whenever more than a bug fix has landed: bump the version in `Cargo.toml` and
   `apps/desktop/ui/package.json` (0.x: minor for features), add the `CHANGELOG.md` section,
   run `npm run screenshots`, then tag and push (see Releases) and check the published files.
+- While the maintainer tests at the machine, build the AppImage locally first
+  (`npm run tauri -- build --bundles appimage` in `apps/desktop/ui`, a few minutes) and hand it
+  over; tag the release once the changes are tested, so nobody waits for the release workflow.
 - Commit messages are plain: no AI co-author lines, no session links.
 - Before each commit: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`; after front-end changes also `npm run check`, `npm test` and
