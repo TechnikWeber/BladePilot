@@ -17,7 +17,7 @@ describe('the mock shapes', () => {
 
   it('cut a weeding box last, in a pass of its own', () => {
     const design = { ...madeDesign({ kind: 'shape', shape: 'star', widthMm: 50, heightMm: 50, cornerMm: 0, sides: 5, inner: 0.5 }), id: 1 };
-    const blade = { tool: 'blade' as const, force: null, speed: null, depth: null, repeats: 1, overcutMm: 0, bladeOffsetMm: 0.9 };
+    const blade = { tool: 'autoBlade' as const, force: null, speed: null, depth: null, repeats: 1, overcutMm: 0, bladeOffsetMm: 0.9 };
     const { plan } = planMock(
       {
         machine: 'portrait3',
@@ -37,6 +37,6 @@ describe('the mock shapes', () => {
   });
 
   it('leave text to the desktop app', () => {
-    expect(() => madeDesign({ kind: 'text', text: 'Hi', family: '', sizeMm: 20, bold: false, italic: false, align: 'left', letterSpacingMm: 0, lineHeight: 1.2 })).toThrow();
+    expect(() => madeDesign({ kind: 'text', text: 'Hi', family: '', sizeMm: 20, bold: false, italic: false, align: 'left', letterSpacingMm: 0, lineHeight: 1.2, weld: false })).toThrow();
   });
 });

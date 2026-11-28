@@ -67,7 +67,7 @@
         { kind: 'shape', shape: 'rectangle', widthMm: 80, heightMm: 30, cornerMm: 8, sides: 5, inner: 0.5 },
         { kind: 'shape', shape: 'polygon', widthMm: 40, heightMm: 40, cornerMm: 0, sides: 6, inner: 0.5 },
       ];
-      const name: MadeSpec = { kind: 'text', text: 'Lena', family: '', sizeMm: 40, bold: true, italic: false, align: 'center', letterSpacingMm: 0, lineHeight: 1.2 };
+      const name: MadeSpec = { kind: 'text', text: 'Lena', family: '', sizeMm: 40, bold: true, italic: false, align: 'center', letterSpacingMm: 0, lineHeight: 1.2, weld: false };
       // The browser demo has no fonts: the text comes only in the desktop app.
       const made = await Promise.all([name, ...specs].map((spec) => backend.makeDesign(spec).catch(() => null)));
       await app.open(async () => made.filter((d): d is DesignInfo => d !== null));

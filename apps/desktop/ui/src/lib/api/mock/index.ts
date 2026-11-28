@@ -2,6 +2,7 @@
 // and the demo design are the Rust side's own output (see the desktop crate's tests).
 import demoJson from './demo.json';
 import demoContours from './demo-contours.json';
+import alignmentJson from './alignment.json';
 import testJson from './test-cut.json';
 import machinesJson from './machines.json';
 import { offsetHull, planMock, simulateMock } from './planner';
@@ -149,6 +150,44 @@ export const mockBackend: Backend = {
   },
   async makeDesign(spec) {
     return keep(madeDesign(spec));
+  },
+  async alignmentDesign(widthMm) {
+    const sheets = alignmentJson as unknown as Record<string, DesignInfo>;
+    return keep(widthMm > 212 ? sheets.letter : sheets.a4);
+  },
+  async weldItems() {
+    throw { code: 'desktopOnly', message: 'welding needs the desktop app' };
+  },
+  async tidyDesign(id) {
+    const design = designs.get(id);
+    if (!design) throw { code: 'unknownDesign', message: `no design ${id}` };
+    return { design, joined: 0, removed: 0 };
+  },
+  async calibrationSheet() {
+    throw { code: 'desktopOnly', message: 'the browser demo cannot write files' };
+  },
+  async calibrationDesign() {
+    throw { code: 'desktopOnly', message: 'the calibration needs the desktop app' };
+  },
+  async saveProject() {
+    throw { code: 'desktopOnly', message: 'the browser demo cannot write files' };
+  },
+  async pickProject() {
+    throw { code: 'desktopOnly', message: 'the browser demo cannot read files from disk' };
+  },
+  async openProject() {
+    throw { code: 'desktopOnly', message: 'the browser demo cannot read files from disk' };
+  },
+  async autosave() {},
+  async restoreAutosave() {
+    return null;
+  },
+  async discardAutosave() {},
+  async diagnostics() {
+    return `BladePilot ${__APP_VERSION__} (browser demo)\n${navigator.userAgent}`;
+  },
+  async saveText() {
+    throw { code: 'desktopOnly', message: 'the browser demo cannot write files' };
   },
   async forgetDesign(id) {
     designs.delete(id);

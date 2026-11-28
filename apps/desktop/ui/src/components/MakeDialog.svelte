@@ -142,6 +142,10 @@
                 <button class:on={text.align === 'right'} onclick={() => (text.align = 'right')}>{t('make.alignRight')}</button>
               </div>
             </div>
+            <label class="switch">
+              <input type="checkbox" bind:checked={text.weld} />
+              <span class="track"></span>{t('make.weld')}
+            </label>
             {#if text.text.includes('\n')}
               <div class="row">
                 <NumberField label={t('make.lineHeight')} value={text.lineHeight} digits={2} step={0.05} min={0.5} max={4} unit="×" onchange={(v) => v !== null && (text.lineHeight = v)} />

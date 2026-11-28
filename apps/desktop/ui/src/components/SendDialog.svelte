@@ -1,7 +1,8 @@
 <script lang="ts">
   // Sending a job: choose where to, check the passes, then follow the machine: progress, pauses
   // for tool changes, pause and stop. The job runs on the Rust side; this only shows it.
-  import { app, deviceKey, type TestCorner } from '../lib/state.svelte';
+  import { app, deviceKey, toolName, type TestCorner } from '../lib/state.svelte';
+  import { reportedTool } from '../lib/materials';
   import { t, errorText } from '../lib/i18n/index.svelte';
   import { displayColor } from '../lib/theme.svelte';
   import { fmtLength } from '../lib/format';
@@ -29,10 +30,18 @@
     { id: 'br', arrow: '↘', key: 'test.cornerBr' },
   ];
 
-  function toolName(p: PassInfo | Settings): string {
-    const tool = 'settings' in p ? p.settings.tool : p.tool;
-    return tool === 'pen' ? t('tool.pen') : t('tool.blade');
+  function toolOf(p: PassInfo | Settings): string {
+    return toolName('settings' in p ? p.settings.tool : p.tool);
   }
+
+  /** The machine reports another tool in its holder than the first pass needs. */
+  const toolMismatch = $derived.by(() => {
+    if (app.target === 'virtual' || !s || s.phase !== 'setup') return null;
+    const reported = reportedTool(app.status?.tools[0]);
+    const first = testing ? app.test?.settings.tool : passes[0]?.settings.tool;
+    if (!reported || !first || reported === first) return null;
+    return { reported, wanted: first };
+  });
 
   function colorName(color: string | null): string {
     return nameOf(color);
@@ -42,7 +51,7 @@
     const parts: string[] = [];
     if (x.force !== null) parts.push(`${t('settings.force')} ${x.force}`);
     if (x.speed !== null) parts.push(`${t('settings.speed')} ${x.speed}`);
-    if (x.tool === 'blade' && x.depth !== null) parts.push(`${t('settings.depth')} ${x.depth}`);
+    if (x.tool !== 'pen' && x.depth !== null) parts.push(`${x.tool === 'autoBlade' ? t('settings.depth') : t('settings.depthByHand')} ${x.depth}`);
     if (x.repeats > 1) parts.push(`${x.repeats}×`);
     return parts.join(' · ') || t('settings.machineHint');
   }
@@ -73,7 +82,7 @@
             <div class="test-settings">
               <span class="swatch" class:none={!app.test.color} style={app.test.color ? `background: ${displayColor(app.test.color)}` : ''}></span>
               <strong>{colorName(app.test.color)}</strong>
-              <span class="p-tool"><Icon name={app.test.settings.tool === 'pen' ? 'pen' : 'blade'} size={13} />{toolName(app.test.settings)}</span>
+              <span class="p-tool"><Icon name={app.test.settings.tool === 'pen' ? 'pen' : 'blade'} size={13} />{toolOf(app.test.settings)}</span>
               <span class="p-details">{details(app.test.settings)}</span>
             </div>
             <div class="label summary-label">{t('test.position')}</div>
@@ -117,6 +126,11 @@
               <span>{t('send.understand')}</span>
             </label>
           {/if}
+          {#if toolMismatch}
+            <div class="error-box tool-warning">
+              <Icon name="alert" size={15} />{t('send.toolMismatch', { reported: toolName(toolMismatch.reported), wanted: toolName(toolMismatch.wanted) })}
+            </div>
+          {/if}
 
           {#if !testing}
           <div class="label summary-label">{t('send.summary')}</div>
@@ -140,7 +154,7 @@
                       <span class="num tnum">{i + 1}</span>
                       <span class="swatch" class:none={!p.color} style={p.color ? `background: ${displayColor(p.color)}` : ''}></span>
                       <span class="p-name">{colorName(p.color)}</span>
-                      <span class="p-tool"><Icon name={p.settings.tool === 'pen' ? 'pen' : 'blade'} size={13} />{toolName(p)}</span>
+                      <span class="p-tool"><Icon name={p.settings.tool === 'pen' ? 'pen' : 'blade'} size={13} />{toolOf(p)}</span>
                       <span class="p-details">{details(p.settings)}</span>
                     </div>
                   </li>

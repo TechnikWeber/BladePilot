@@ -6,6 +6,8 @@ import demoSvg from './demo.svg?raw';
 import type { Backend, DesignInfo, JobEvent } from './types';
 
 const DESIGN_EXTENSIONS = ['svg', 'svgz', 'pdf', 'dxf', 'studio', 'studio3', 'png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
+/** What a drop or "open" accepts: designs and projects. */
+const OPEN_EXTENSIONS = ['bladepilot', ...DESIGN_EXTENSIONS];
 
 async function importBytes(name: string, bytes: Uint8Array): Promise<DesignInfo> {
   return invoke('import_design', { name, bytes: Array.from(bytes) });
@@ -44,6 +46,39 @@ export const tauriBackend: Backend = {
   fonts: () => invoke('fonts'),
   makeDesign: (spec) => invoke('make_design', { spec }),
   forgetDesign: (id) => invoke('forget_design', { id }),
+  alignmentDesign: (widthMm, heightMm) => invoke('alignment_design', { widthMm, heightMm }),
+  weldItems: (items) => invoke('weld_items', { items }),
+  tidyDesign: (id) => invoke('tidy_design', { id }),
+  async calibrationSheet(job) {
+    const path = await save({ defaultPath: 'bladepilot-calibration.pdf', filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    if (!path) return null;
+    await invoke('calibration_sheet', { job, path });
+    return path;
+  },
+  calibrationDesign: (job) => invoke('calibration_design', { job }),
+  async saveProject(project, path) {
+    const target = path ?? (await save({ defaultPath: 'project.bladepilot', filters: [{ name: 'BladePilot', extensions: ['bladepilot'] }] }));
+    if (!target) return null;
+    const file = target.toLowerCase().endsWith('.bladepilot') ? target : `${target}.bladepilot`;
+    await invoke('save_project', { path: file, project });
+    return file;
+  },
+  async pickProject() {
+    const picked = await open({ multiple: false, directory: false, filters: [{ name: 'BladePilot', extensions: ['bladepilot'] }] });
+    if (typeof picked !== 'string') return null;
+    return { path: picked, project: await invoke('open_project', { path: picked }) };
+  },
+  openProject: (path) => invoke('open_project', { path }),
+  autosave: (project) => invoke('autosave', { project }),
+  restoreAutosave: () => invoke('restore_autosave'),
+  discardAutosave: () => invoke('discard_autosave'),
+  diagnostics: () => invoke('diagnostics'),
+  async saveText(text, name) {
+    const path = await save({ defaultPath: name, filters: [{ name: 'Text', extensions: ['txt'] }] });
+    if (!path) return null;
+    await invoke('save_text', { path, text });
+    return path;
+  },
   planJob: (job) => invoke('plan_job', { job }),
   simulateJob: (job) => invoke('simulate_job', { job }),
   scanDevices: () => invoke('scan_devices'),
@@ -64,7 +99,7 @@ export const tauriBackend: Backend = {
       else if (p.type === 'leave') onHover(false);
       else if (p.type === 'drop') {
         onHover(false);
-        const designs = p.paths.filter((path) => DESIGN_EXTENSIONS.some((ext) => path.toLowerCase().endsWith('.' + ext)));
+        const designs = p.paths.filter((path) => OPEN_EXTENSIONS.some((ext) => path.toLowerCase().endsWith('.' + ext)));
         if (designs.length) onPaths(designs);
       }
     });

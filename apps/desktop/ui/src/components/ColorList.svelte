@@ -1,7 +1,7 @@
 <script lang="ts">
   // The passes: one per colour (or one for everything), in cutting order, each with its tool and
   // settings. Drag a pass by its grip to choose the order yourself.
-  import { app, colorKey, type ColorRow } from '../lib/state.svelte';
+  import { app, colorKey, toolName, type ColorRow } from '../lib/state.svelte';
   import { t } from '../lib/i18n/index.svelte';
   import { displayColor } from '../lib/theme.svelte';
   import { fmtLength } from '../lib/format';
@@ -24,11 +24,11 @@
 
   function summary(s: Settings): string {
     const material = matchMaterial(s, app.materials);
-    if (material) return app.materialName(material);
-    const parts = [s.tool === 'pen' ? t('settings.pen') : t('settings.blade')];
+    if (material) return s.tool === 'pen' || s.tool === 'autoBlade' ? app.materialName(material) : `${app.materialName(material)} · ${toolName(s.tool)}`;
+    const parts = [toolName(s.tool)];
     if (s.force !== null) parts.push(`${t('settings.force')} ${s.force}`);
     if (s.speed !== null) parts.push(`${t('settings.speed')} ${s.speed}`);
-    if (s.tool === 'blade' && s.depth !== null) parts.push(`${t('settings.depth')} ${s.depth}`);
+    if (s.tool !== 'pen' && s.depth !== null) parts.push(`${t('settings.depth')} ${s.depth}`);
     if (s.repeats > 1) parts.push(`${s.repeats}×`);
     return parts.join(' · ');
   }

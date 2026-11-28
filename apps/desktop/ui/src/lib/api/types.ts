@@ -100,6 +100,8 @@ export type MadeSpec =
       align: 'left' | 'center' | 'right';
       letterSpacingMm: number;
       lineHeight: number;
+      /** Weld overlapping letters into one outline (script fonts). */
+      weld: boolean;
     };
 
 /** A weeding box around a design, with lines through the waste if asked. */
@@ -108,7 +110,10 @@ export interface WeedRequest {
   lines: boolean;
 }
 
-export type Tool = 'blade' | 'pen';
+/** The tool in the holder: blades the machine sets (AutoBlade) or that are set by hand, or a pen. */
+export type Tool = 'autoBlade' | 'ratchet' | 'deepCut' | 'kraft' | 'rotary' | 'pen';
+
+export const TOOLS: Tool[] = ['autoBlade', 'ratchet', 'deepCut', 'kraft', 'rotary', 'pen'];
 
 export interface Settings {
   tool: Tool;
@@ -161,6 +166,26 @@ export interface JobRequest {
   colors: ColorRequest[];
   /** Print and cut: the machine looks for the registration marks first. */
   print: PrintSetup | null;
+  /** The machine's correction, [right, down] mm. */
+  offsetMm?: [number, number] | null;
+}
+
+export interface TidyResult {
+  design: DesignInfo;
+  joined: number;
+  removed: number;
+}
+
+/** A project to save: the front end's own state and the designs it uses. */
+export interface ProjectRequest {
+  state: unknown;
+  designs: number[];
+}
+
+export interface OpenedProject {
+  state: unknown;
+  designs: { savedId: number; design: DesignInfo }[];
+  warnings: string[];
 }
 
 export interface PassInfo {
@@ -267,6 +292,29 @@ export interface Backend {
   /** Makes a shape or sets a text as a new design. */
   makeDesign(spec: MadeSpec): Promise<DesignInfo>;
   forgetDesign(id: number): Promise<void>;
+  /** The alignment test for a sheet laid into the top-left corner of the grid. */
+  alignmentDesign(widthMm: number, heightMm: number): Promise<DesignInfo>;
+  /** Welds what the items cut into one new design in mat mm. */
+  weldItems(items: PlacedItem[]): Promise<DesignInfo>;
+  /** Joins line pieces that meet and leaves out lines drawn twice. */
+  tidyDesign(id: number): Promise<TidyResult>;
+  /** Asks where to save the print and cut calibration sheet and writes it; the path, or null. */
+  calibrationSheet(job: JobRequest): Promise<string | null>;
+  /** The crosses the machine draws on the calibration sheet, in mat mm. */
+  calibrationDesign(job: JobRequest): Promise<DesignInfo>;
+  /** Saves a project; asks where when `path` is null. The path, or null when cancelled. */
+  saveProject(project: ProjectRequest, path: string | null): Promise<string | null>;
+  /** Asks for a project and opens it; null when cancelled. */
+  pickProject(): Promise<{ path: string; project: OpenedProject } | null>;
+  openProject(path: string): Promise<OpenedProject>;
+  /** Keeps the session for the next start. */
+  autosave(project: ProjectRequest): Promise<void>;
+  restoreAutosave(): Promise<OpenedProject | null>;
+  discardAutosave(): Promise<void>;
+  /** A report for bug reports: versions, system, machines, log. */
+  diagnostics(): Promise<string>;
+  /** Asks where to save a text and writes it; the path, or null when cancelled. */
+  saveText(text: string, name: string): Promise<string | null>;
   planJob(job: JobRequest): Promise<PlanInfo>;
   simulateJob(job: JobRequest): Promise<Simulation>;
   scanDevices(): Promise<DeviceInfo[]>;

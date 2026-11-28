@@ -29,7 +29,7 @@ import type {
 import { type Box, type Placement, designSize, inside, normalizeAngle, placedBox, placementMatrix, union } from './geometry';
 import { errorText, t } from './i18n/index.svelte';
 import type { Key } from './i18n/en';
-import { BUILTIN_MATERIALS, type Material, loadMaterials, storeMaterials } from './materials';
+import { BUILTIN_MATERIALS, type Material, loadMaterials, normalizeTool, storeMaterials } from './materials';
 
 export interface Item extends Placement {
   id: number;
@@ -184,8 +184,18 @@ export interface View {
 const PREFS_KEY = 'bladepilot.prefs.v1';
 const USB_QUIET_KEY = 'bladepilot.usbAccess.quiet';
 
-export function defaultSettings(tool: Tool = 'blade'): Settings {
+export function defaultSettings(tool: Tool = 'autoBlade'): Settings {
   return { tool, force: null, speed: null, depth: null, repeats: 1, overcutMm: 0, bladeOffsetMm: 0.9 };
+}
+
+/** The name of a tool in the current language. */
+export function toolName(tool: Tool): string {
+  return t(`toolname.${tool}` as Key);
+}
+
+/** Settings as stored before 0.8 (`blade`), brought up to date. */
+function normalizeSettings(s: Settings): Settings {
+  return { ...defaultSettings(), ...s, tool: normalizeTool(s.tool) };
 }
 
 export function colorKey(color: string | null): string {
@@ -467,7 +477,9 @@ class AppState {
 
   /** Puts a material's settings on a colour (or the single pass); heat transfer vinyl mirrors the job. */
   applyMaterial(settings: Settings, material: Material): void {
-    Object.assign(settings, $state.snapshot(material.settings));
+    // A blade material keeps the blade in use (vinyl with the ratchet blade is still vinyl).
+    const tool: Tool = material.pen ? 'pen' : settings.tool === 'pen' ? 'autoBlade' : settings.tool;
+    Object.assign(settings, $state.snapshot(material.settings), { tool });
     if (material.mirror && !this.mirrored && this.items.length) {
       this.setMirror(true);
       this.toast(t('material.mirrored'), 'info');
@@ -479,7 +491,7 @@ class AppState {
     const trimmed = name.trim();
     if (!trimmed) return;
     const rest = this.customMaterials.filter((m) => m.name !== trimmed);
-    this.customMaterials = [...rest, { id: `u:${Date.now()}`, name: trimmed, builtin: false, settings: $state.snapshot(settings) }];
+    this.customMaterials = [...rest, { id: `u:${Date.now()}`, name: trimmed, builtin: false, pen: settings.tool === 'pen', settings: $state.snapshot(settings) }];
     storeMaterials($state.snapshot(this.customMaterials));
   }
 
@@ -511,8 +523,11 @@ class AppState {
     const stored = loadPrefs();
     if (stored.unit) this.unit = stored.unit;
     if (stored.byColor !== undefined) this.byColor = stored.byColor;
-    if (stored.single) this.single = { ...defaultSettings(), ...stored.single };
-    if (stored.colors) this.prefs = stored.colors;
+    if (stored.single) this.single = normalizeSettings(stored.single);
+    if (stored.colors) {
+      for (const p of Object.values(stored.colors)) p.settings = normalizeSettings(p.settings);
+      this.prefs = stored.colors;
+    }
     if (stored.print) this.printSetup = { ...this.printSetup, ...stored.print };
     if (stored.testCorner && ['tl', 'tr', 'bl', 'br'].includes(stored.testCorner)) this.testCorner = stored.testCorner;
     this.customMaterials = loadMaterials();
@@ -879,7 +894,7 @@ class AppState {
   openMake(kind: 'text' | 'shape'): void {
     const spec: MadeSpec =
       kind === 'text'
-        ? { kind: 'text', text: '', family: '', sizeMm: 25, bold: false, italic: false, align: 'center', letterSpacingMm: 0, lineHeight: 1.2 }
+        ? { kind: 'text', text: '', family: '', sizeMm: 25, bold: false, italic: false, align: 'center', letterSpacingMm: 0, lineHeight: 1.2, weld: false }
         : { kind: 'shape', shape: 'rectangle', widthMm: 50, heightMm: 50, cornerMm: 0, sides: 5, inner: 0.5 };
     this.make = { spec, itemId: null };
     if (kind === 'text') void this.loadFonts();

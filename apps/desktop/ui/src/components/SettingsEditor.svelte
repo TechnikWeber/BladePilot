@@ -1,9 +1,9 @@
 <script lang="ts">
   // Material, tool, force, speed, depth and repeats of one pass.
-  import type { Settings } from '../lib/api/types';
+  import { TOOLS, type Settings, type Tool } from '../lib/api/types';
   import { t } from '../lib/i18n/index.svelte';
-  import { app } from '../lib/state.svelte';
-  import { matchMaterial } from '../lib/materials';
+  import { app, toolName } from '../lib/state.svelte';
+  import { matchMaterial, materialsFor } from '../lib/materials';
   import NumberField from './NumberField.svelte';
   import Icon from './Icon.svelte';
 
@@ -12,7 +12,21 @@
   let naming = $state(false);
   let name = $state('');
 
-  const material = $derived(matchMaterial(settings, app.materials));
+  const choices = $derived(materialsFor(settings.tool, app.materials));
+  const material = $derived(matchMaterial(settings, choices));
+  const pen = $derived(settings.tool === 'pen');
+
+  function setTool(tool: Tool): void {
+    const wasPen = settings.tool === 'pen';
+    settings.tool = tool;
+    // Between pen and blade the numbers mean something else: start from that kind's first material.
+    if (wasPen !== (tool === 'pen')) {
+      const first = materialsFor(tool, app.materials)[0];
+      if (first) app.applyMaterial(settings, first);
+      settings.tool = tool;
+    }
+    onchange();
+  }
 
   function choose(id: string): void {
     const m = app.materials.find((x) => x.id === id);
@@ -37,7 +51,7 @@
   <div class="material-row">
     <select class="material" value={material?.id ?? ''} onchange={(e) => choose((e.target as HTMLSelectElement).value)} aria-label={t('material.title')}>
       <option value="" disabled>{t('material.own')}</option>
-      {#each app.materials as m (m.id)}
+      {#each choices as m (m.id)}
         <option value={m.id}>{app.materialName(m)}</option>
       {/each}
     </select>
@@ -56,31 +70,32 @@
   {/if}
   {#if material?.builtin}<p class="hint material-hint">{t('material.hint')}</p>{/if}
   <div class="tool-row">
-    <span class="label">{t('settings.tool')}</span>
-    <div class="segmented">
-      <button class:on={settings.tool === 'blade'} onclick={() => set('tool', 'blade')}><Icon name="blade" size={14} />{t('settings.blade')}</button>
-      <button class:on={settings.tool === 'pen'} onclick={() => set('tool', 'pen')}><Icon name="pen" size={14} />{t('settings.pen')}</button>
-    </div>
+    <span class="label"><Icon name={pen ? 'pen' : 'blade'} size={14} />{t('settings.tool')}</span>
+    <select class="tool" value={settings.tool} onchange={(e) => setTool((e.target as HTMLSelectElement).value as Tool)} aria-label={t('settings.tool')}>
+      {#each TOOLS as tool (tool)}
+        <option value={tool}>{toolName(tool)}</option>
+      {/each}
+    </select>
   </div>
   <div class="grid">
     <NumberField label={t('settings.force')} title={t('settings.machineHint')} value={settings.force} optional min={1} max={33} step={1} digits={0} placeholder={t('settings.machine')} onchange={(v) => set('force', v)} />
     <NumberField label={t('settings.speed')} title={t('settings.machineHint')} value={settings.speed} optional min={1} max={30} step={1} digits={0} placeholder={t('settings.machine')} onchange={(v) => set('speed', v)} />
     <NumberField
-      label={t('settings.depth')}
-      title={t('settings.machineHint')}
-      value={settings.tool === 'pen' ? null : settings.depth}
+      label={settings.tool === 'autoBlade' || pen ? t('settings.depth') : t('settings.depthByHand')}
+      title={settings.tool === 'autoBlade' ? t('settings.machineHint') : t('settings.depthByHandHint')}
+      value={pen ? null : settings.depth}
       optional
       min={0}
       max={10}
       step={1}
       digits={0}
-      disabled={settings.tool === 'pen'}
-      placeholder={settings.tool === 'pen' ? '–' : t('settings.machine')}
+      disabled={pen}
+      placeholder={pen ? '–' : settings.tool === 'autoBlade' ? t('settings.machine') : '–'}
       onchange={(v) => set('depth', v)}
     />
     <NumberField label={t('settings.repeats')} value={settings.repeats} min={1} max={10} step={1} digits={0} unit="×" onchange={(v) => set('repeats', v ?? 1)} />
   </div>
-  {#if settings.tool === 'blade'}
+  {#if !pen}
     <button class="more" onclick={() => (more = !more)}>
       <Icon name={more ? 'chevronDown' : 'chevronRight'} size={13} />{more ? t('settings.less') : t('settings.more')}
     </button>
@@ -149,7 +164,21 @@
   }
 
   .tool-row .label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     margin: 0;
+  }
+
+  .tool {
+    height: 30px;
+    padding: 0 8px;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
   }
 
   .grid {

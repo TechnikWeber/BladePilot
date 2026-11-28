@@ -7,7 +7,7 @@ import type { DesignInfo, JobRequest, MachineInfo, Settings } from '../types';
 const design = { ...(demo as unknown as DesignInfo), id: 1 };
 const machines = machinesJson as MachineInfo[];
 const designs = new Map([[1, design]]);
-const blade: Settings = { tool: 'blade', force: null, speed: null, depth: null, repeats: 1, overcutMm: 0, bladeOffsetMm: 0.9 };
+const blade: Settings = { tool: 'autoBlade', force: null, speed: null, depth: null, repeats: 1, overcutMm: 0, bladeOffsetMm: 0.9 };
 const RED = '#e5484d';
 const BLACK = '#1f2328';
 const BLUE = '#2f6fde';
