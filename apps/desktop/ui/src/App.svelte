@@ -16,6 +16,8 @@
   import Toasts from './components/Toasts.svelte';
   import UsbAccessDialog from './components/UsbAccessDialog.svelte';
   import MakeDialog from './components/MakeDialog.svelte';
+  import SettingsDialog from './components/SettingsDialog.svelte';
+  import UnsavedDialog from './components/UnsavedDialog.svelte';
 
   let ready = $state(false);
 
@@ -26,22 +28,28 @@
       const extra = import.meta.env.DEV ? (import.meta.env.VITE_STATE ?? '') : '';
       const params = new URLSearchParams(location.search + (extra ? `&${extra}` : ''));
       await app.init();
-      setLanguage(params.get('lang') ?? app.info?.language ?? navigator.language);
+      setLanguage(params.get('lang') ?? (app.languageChoice !== 'system' ? app.languageChoice : (app.info?.language ?? navigator.language)));
       ready = true;
       unlisten = await backend.onFileDrop(
         async (paths) => {
-          for (const path of paths) await app.open(async () => [await backend.openPath(path)], path);
+          for (const path of paths) await openPath(path);
         },
         (over) => (app.dropping = over),
       );
       if (!backend.mock) void app.scan();
-      for (const path of await backend.startupFiles()) await app.open(async () => [await backend.openPath(path)], path);
+      for (const path of await backend.startupFiles()) await openPath(path);
       await screenshotState(params);
     })();
     return () => unlisten?.();
   });
 
-  /** `?connected`, `?demo`, `?shapes`, `?make=text|shape`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
+  /** A dropped or named file: a project replaces the mat, a design joins it. */
+  async function openPath(path: string): Promise<void> {
+    if (path.toLowerCase().endsWith('.bladepilot')) await app.openProjectPath(path);
+    else await app.open(async () => [await backend.openPath(path)], path);
+  }
+
+  /** `?connected`, `?demo`, `?shapes`, `?multi`, `?settings`, `?align`, `?make=text|shape`, `?preview=0.6`, `?send[=change|start]`, `?test`, `?print`, `?select`: states for screenshots and tests. */
   async function screenshotState(params: URLSearchParams): Promise<void> {
     if (params.has('machine')) app.setMachine(params.get('machine') as string);
     if (params.has('connected')) {
@@ -75,6 +83,9 @@
       app.arrange();
       app.selected = app.items[0]?.id ?? null;
     }
+    if (params.has('multi')) app.selectAll();
+    if (params.has('settings')) app.settingsOpen = true;
+    if (params.has('align')) await app.openAlignment();
     if (params.has('make')) {
       app.openMake(params.get('make') === 'text' ? 'text' : 'shape');
       if (app.make?.spec.kind === 'shape') app.make.spec = { ...app.make.spec, shape: 'star', widthMm: 60, heightMm: 57, inner: 0.45 };
@@ -125,6 +136,15 @@
     return () => clearTimeout(timer);
   });
 
+  // The session is kept automatically, a moment after the last change, to pick up after a crash
+  // or at the next start.
+  $effect(() => {
+    if (!ready || !app.items.length) return;
+    const snapshot = JSON.stringify(app.projectRequest(true));
+    const timer = setTimeout(() => void backend.autosave(JSON.parse(snapshot)).catch(() => {}), 1500);
+    return () => clearTimeout(timer);
+  });
+
   // A changed job invalidates the preview.
   $effect(() => {
     void JSON.stringify(app.job);
@@ -135,10 +155,24 @@
 
   function onKey(e: KeyboardEvent): void {
     const target = e.target as HTMLElement;
-    if (target.closest('input, select, textarea') || app.send || app.usbDialog || app.make) return;
+    if (target.closest('input, select, textarea') || app.send || app.usbDialog || app.make || app.settingsOpen || app.unsavedAsk) return;
     const ctrl = e.ctrlKey || e.metaKey;
     const step = e.shiftKey ? 10 : 1;
-    if (ctrl && e.key.toLowerCase() === 'o') {
+    const key = e.key.toLowerCase();
+    if (ctrl && key === 'n') {
+      e.preventDefault();
+      void app.newProject();
+    } else if (ctrl && key === 's') {
+      e.preventDefault();
+      void app.saveProject(e.shiftKey);
+    } else if (ctrl && key === 'a') {
+      e.preventDefault();
+      app.selectAll();
+    } else if (ctrl && key === 'g') {
+      e.preventDefault();
+      if (e.shiftKey) app.ungroupSelected();
+      else app.groupSelected();
+    } else if (ctrl && e.key.toLowerCase() === 'o') {
       e.preventDefault();
       void app.open(() => backend.pickDesigns());
     } else if (ctrl && e.key.toLowerCase() === 'z') {
@@ -173,7 +207,7 @@
       app.zoomBy(1.25);
     } else if (e.key === '-') {
       app.zoomBy(1 / 1.25);
-    } else if (e.key.startsWith('Arrow') && app.selected !== null) {
+    } else if (e.key.startsWith('Arrow') && app.selection.length) {
       e.preventDefault();
       const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
       const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
@@ -204,6 +238,8 @@
 <SendDialog />
 <UsbAccessDialog />
 <MakeDialog />
+<SettingsDialog />
+<UnsavedDialog />
 <Toasts />
 
 <style>

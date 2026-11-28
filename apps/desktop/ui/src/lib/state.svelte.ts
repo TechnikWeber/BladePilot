@@ -7,6 +7,8 @@ import type {
   AppInfo,
   ItemCut,
   MadeSpec,
+  OpenedProject,
+  ProjectRequest,
   PrintSetup,
   WeedRequest,
   TraceRequest,
@@ -28,6 +30,7 @@ import type {
 } from './api/types';
 import { type Box, type Placement, designSize, inside, normalizeAngle, placedBox, placementMatrix, union } from './geometry';
 import { errorText, t } from './i18n/index.svelte';
+import { setTheme } from './theme.svelte';
 import type { Key } from './i18n/en';
 import { BUILTIN_MATERIALS, type Material, loadMaterials, normalizeTool, storeMaterials } from './materials';
 
@@ -40,6 +43,10 @@ export interface Item extends Placement {
   print: boolean;
   /** Weeding box (and lines) around the design. */
   weed: WeedRequest | null;
+  /** Items of a group are selected and moved together. */
+  group: number | null;
+  /** Locked in place: not moved, turned or resized. */
+  locked: boolean;
 }
 
 /** The colour contour cuts get, a pass of their own (as `CONTOUR_COLOR` on the Rust side). */
@@ -96,7 +103,7 @@ export type SendPhase = 'setup' | 'connecting' | 'running' | 'paused' | 'finishi
 export interface SendState {
   phase: SendPhase;
   /** The designs on the mat, or the test cut. */
-  mode: 'job' | 'test';
+  mode: 'job' | 'test' | 'align' | 'calibrate';
   target: Target;
   sent: number;
   total: number;
@@ -202,9 +209,42 @@ export function colorKey(color: string | null): string {
   return color ?? 'none';
 }
 
+/** A machine's corrections, `[right, down]` mm: on the mat, and in print and cut. */
+export interface Correction {
+  mat: [number, number];
+  print: [number, number];
+}
+
+/** What the unsaved-changes question can answer. */
+export type UnsavedChoice = 'save' | 'discard' | 'cancel';
+
+/** The saved state of a project, as the front end writes it into a `.bladepilot` file. */
+interface ProjectState {
+  version: 1;
+  machineId: string;
+  matId: string;
+  byColor: boolean;
+  manualOrder: boolean;
+  order: (string | null)[];
+  single: Settings;
+  prefs: Record<string, ColorPrefs>;
+  printMode: boolean;
+  printSetup: PrintSetup;
+  mirrored: boolean;
+  items: Item[];
+  /** Only in the automatic copy: the file it belongs to. */
+  projectPath?: string | null;
+}
+
+const RECENT_KEY = 'bladepilot.recent.v1';
+
 interface StoredPrefs {
   print?: PrintSetup;
   testCorner?: TestCorner;
+  gridUnit?: 'auto' | 'cm' | 'in';
+  theme?: 'system' | 'light' | 'dark';
+  language?: 'system' | 'de' | 'en';
+  corrections?: Record<string, Correction>;
   machineId?: string;
   matId?: string;
   unit?: 'mm' | 'in';
@@ -222,6 +262,7 @@ function loadPrefs(): StoredPrefs {
 }
 
 let nextItemId = 1;
+let nextGroupId = 1;
 let nextToastId = 1;
 let planSeq = 0;
 
@@ -237,7 +278,18 @@ class AppState {
 
   designs = $state<Record<number, DesignInfo>>({});
   items = $state<Item[]>([]);
-  selected = $state<number | null>(null);
+  /** The selected items, the last chosen last. */
+  selection = $state<number[]>([]);
+
+  /** The one selected item's id; `null` when none or several are selected. Setting it selects that
+   * item (and the rest of its group). */
+  get selected(): number | null {
+    return this.selection.length === 1 ? this.selection[0] : null;
+  }
+
+  set selected(id: number | null) {
+    this.selection = id === null ? [] : this.withGroup([id]);
+  }
   /** A drag on the mat is under way: planning waits for its end. */
   dragging = $state(false);
 
@@ -247,6 +299,23 @@ class AppState {
   printSetup = $state<PrintSetup>({ paper: 'a4', insetMm: 10 });
   /** Everything is cut mirrored (heat transfer vinyl is cut from the back). */
   mirrored = $state(false);
+  /** The mat's grid and rulers: like the measurements, or always centimetres or inches. */
+  gridUnit = $state<'auto' | 'cm' | 'in'>('auto');
+  gridInch = $derived(this.gridUnit === 'in' || (this.gridUnit === 'auto' && this.unit === 'in'));
+  themeChoice = $state<'system' | 'light' | 'dark'>('system');
+  languageChoice = $state<'system' | 'de' | 'en'>('system');
+  /** Corrections per machine, from the alignment test and the calibration sheet. */
+  corrections = $state<Record<string, Correction>>({});
+  settingsOpen = $state(false);
+  /** The project file the mat was opened from or saved to. */
+  projectPath = $state<string | null>(null);
+  /** Changes since the project was opened or saved. */
+  dirty = $state(false);
+  recent = $state<string[]>([]);
+  /** The last session, kept automatically, while it can still be resumed. */
+  lastSession = $state<OpenedProject | null>(null);
+  /** The unsaved-changes question is open; its answer goes here. */
+  unsavedAsk = $state<((choice: UnsavedChoice) => void) | null>(null);
   /** The user's own material profiles. */
   customMaterials = $state<Material[]>([]);
   materials = $derived([...BUILTIN_MATERIALS, ...this.customMaterials]);
@@ -282,6 +351,8 @@ class AppState {
   preview = $state<PreviewState | null>(null);
   send = $state<SendState | null>(null);
   test = $state<TestCut | null>(null);
+  /** The alignment test or the calibration crosses, while their dialog is open. */
+  check = $state<{ design: DesignInfo; settings: Settings; paper: 'a4' | 'letter' } | null>(null);
   /** Where test cuts start; the next one goes beside it, away from that corner. */
   testCorner = $state<TestCorner>('tr');
   testDesign = $state<DesignInfo | null>(null);
@@ -324,7 +395,15 @@ class AppState {
     if (!mat) return { w: 203.2, h: 304.8 };
     return { w: mat.widthMm, h: mat.id === 'none' ? this.rollLength : mat.heightMm };
   });
-  selectedItem = $derived(this.items.find((i) => i.id === this.selected) ?? null);
+  selectedItems = $derived(this.items.filter((i) => this.selection.includes(i.id)));
+  /** The single selected item; `null` when none or several are selected. */
+  selectedItem = $derived(this.selectedItems.length === 1 ? this.selectedItems[0] : null);
+  /** The box around everything selected. */
+  selectionBox = $derived.by(() => {
+    let box: Box | null = null;
+    for (const item of this.selectedItems) box = union(box, this.boxes[item.id] ?? null);
+    return box;
+  });
 
   boxes = $derived.by(() => {
     const out: Record<number, Box> = {};
@@ -425,6 +504,7 @@ class AppState {
       machine: machine.id,
       mat: mat.id,
       print: this.printMode ? $state.snapshot(this.printSetup) : null,
+      offsetMm: this.correctionFor(this.printMode),
       items,
       byColor: this.byColor,
       manualOrder: this.byColor && this.manualOrder,
@@ -449,6 +529,25 @@ class AppState {
       byColor: false,
       manualOrder: false,
       settings: $state.snapshot(test.settings),
+      colors: [],
+    };
+  });
+
+  /** The alignment test or the calibration crosses as a job: one pass, as they lie on the mat. */
+  checkJob = $derived.by((): JobRequest | null => {
+    const check = this.check;
+    const send = this.send;
+    if (!check || !send || !this.machine || !this.mat) return null;
+    const calibrate = send.mode === 'calibrate';
+    return {
+      machine: this.machine.id,
+      mat: this.mat.id,
+      items: [{ design: check.design.id, matrix: [1, 0, 0, 1, 0, 0], cut: { kind: 'lines', outerOnly: false, hidden: [] }, print: false, weed: null }],
+      print: calibrate ? $state.snapshot(this.printSetup) : null,
+      offsetMm: this.correctionFor(calibrate),
+      byColor: false,
+      manualOrder: false,
+      settings: $state.snapshot(check.settings),
       colors: [],
     };
   });
@@ -530,6 +629,16 @@ class AppState {
     }
     if (stored.print) this.printSetup = { ...this.printSetup, ...stored.print };
     if (stored.testCorner && ['tl', 'tr', 'bl', 'br'].includes(stored.testCorner)) this.testCorner = stored.testCorner;
+    if (stored.gridUnit) this.gridUnit = stored.gridUnit;
+    if (stored.theme) this.themeChoice = stored.theme;
+    if (stored.language) this.languageChoice = stored.language;
+    if (stored.corrections) this.corrections = stored.corrections;
+    try {
+      const recent = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+      if (Array.isArray(recent)) this.recent = recent.filter((r) => typeof r === 'string').slice(0, 8);
+    } catch {
+      // No storage: no list.
+    }
     this.customMaterials = loadMaterials();
     const [info, machines] = await Promise.all([backend.appInfo(), backend.machines()]);
     this.info = info;
@@ -538,7 +647,14 @@ class AppState {
     this.machineId = machine.id;
     this.matId = machine.mats.some((m) => m.id === stored.matId) ? (stored.matId as string) : machine.defaultMat;
     if (!stored.unit && /^en-(US|LR|MM)/i.test(info.language)) this.unit = 'in';
+    setTheme(this.themeChoice);
     void this.checkUsbAccess(true);
+    try {
+      const last = await backend.restoreAutosave();
+      if (last && Array.isArray((last.state as { items?: unknown[] }).items) && (last.state as { items: unknown[] }).items.length) this.lastSession = last;
+    } catch {
+      // A broken copy of the last session is simply not offered.
+    }
   }
 
   /** Looks for the udev rule; at start the dialog opens once unless the user said not to ask. */
@@ -578,6 +694,10 @@ class AppState {
       colors: $state.snapshot(this.prefs),
       print: $state.snapshot(this.printSetup),
       testCorner: this.testCorner,
+      gridUnit: this.gridUnit,
+      theme: this.themeChoice,
+      language: this.languageChoice,
+      corrections: $state.snapshot(this.corrections),
     };
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify(data));
@@ -623,6 +743,7 @@ class AppState {
   // History
 
   checkpoint(): void {
+    this.dirty = true;
     this.past.push($state.snapshot(this.items));
     if (this.past.length > 100) this.past.shift();
     this.future = [];
@@ -647,7 +768,7 @@ class AppState {
   }
 
   private afterHistory(): void {
-    if (!this.items.some((i) => i.id === this.selected)) this.selected = null;
+    this.selection = this.selection.filter((id) => this.items.some((i) => i.id === id));
     this.canUndo = this.past.length > 0;
     this.canRedo = this.future.length > 0;
   }
@@ -688,7 +809,7 @@ class AppState {
       }
     }
     const cut: ItemCut = design.image && this.printMode ? { kind: 'contour', offsetMm: 2 } : { kind: 'lines', outerOnly: false, hidden: [] };
-    const item: Item = { id: nextItemId++, design: design.id, cx, cy, angle: 0, sx: this.mirrored ? -k : k, sy: k, cut, print: !!design.printable, weed: null };
+    const item: Item = { id: nextItemId++, design: design.id, cx, cy, angle: 0, sx: this.mirrored ? -k : k, sy: k, cut, print: !!design.printable, weed: null, group: null, locked: false };
     this.items.push(item);
     this.selected = item.id;
     for (const w of design.warnings) this.toast(`${design.name}: ${w}`, 'info');
@@ -873,7 +994,7 @@ class AppState {
     for (; placed < Math.min(count, 200); placed++) {
       const spot = this.freeSpot(w, h, taken);
       if (!spot) break;
-      const copy: Item = { ...$state.snapshot(item), id: nextItemId++, cx: item.cx + spot.x - box.x0, cy: item.cy + spot.y - box.y0 };
+      const copy: Item = { ...$state.snapshot(item), id: nextItemId++, cx: item.cx + spot.x - box.x0, cy: item.cy + spot.y - box.y0, group: null, locked: false };
       this.items.push(copy);
       taken.push({ x0: spot.x, y0: spot.y, x1: spot.x + w, y1: spot.y + h });
     }
@@ -931,17 +1052,214 @@ class AppState {
     }
   }
 
-  removeSelected(): void {
-    if (this.selected === null) return;
-    this.checkpoint();
-    this.items = this.items.filter((i) => i.id !== this.selected);
+  /** The chosen machine's correction for the mat or for print and cut; `null` when there is none. */
+  correctionFor(print: boolean): [number, number] | null {
+    const c = this.corrections[this.machineId];
+    const v = c ? (print ? c.print : c.mat) : null;
+    return v && (v[0] !== 0 || v[1] !== 0) ? [v[0], v[1]] : null;
+  }
+
+  setCorrection(kind: 'mat' | 'print', value: [number, number]): void {
+    const c = this.corrections[this.machineId] ?? { mat: [0, 0], print: [0, 0] };
+    this.corrections[this.machineId] = { ...c, [kind]: value };
+    this.savePrefs();
+  }
+
+  // Projects
+
+  private projectState(withPath = false): ProjectState {
+    return {
+      version: 1,
+      machineId: this.machineId,
+      matId: this.matId,
+      byColor: this.byColor,
+      manualOrder: this.manualOrder,
+      order: $state.snapshot(this.order),
+      single: $state.snapshot(this.single),
+      prefs: $state.snapshot(this.prefs),
+      printMode: this.printMode,
+      printSetup: $state.snapshot(this.printSetup),
+      mirrored: this.mirrored,
+      items: $state.snapshot(this.items),
+      ...(withPath ? { projectPath: this.projectPath } : {}),
+    };
+  }
+
+  projectRequest(withPath = false): ProjectRequest {
+    return { state: this.projectState(withPath), designs: [...new Set(this.items.map((i) => i.design))] };
+  }
+
+  projectName = $derived(this.projectPath ? (this.projectPath.split(/[\\/]/).pop() ?? '').replace(/\.bladepilot$/i, '') : null);
+
+  private addRecent(path: string): void {
+    this.recent = [path, ...this.recent.filter((p) => p !== path)].slice(0, 8);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(this.recent));
+    } catch {
+      // Nothing to keep it in.
+    }
+  }
+
+  /** Asks whether to save unsaved changes first; `true` when the mat may be replaced. */
+  confirmDiscard(): Promise<boolean> {
+    if (!this.dirty || !this.items.length) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      this.unsavedAsk = (choice) => {
+        this.unsavedAsk = null;
+        if (choice === 'save') void this.saveProject().then(() => resolve(!this.dirty));
+        else resolve(choice === 'discard');
+      };
+    });
+  }
+
+  async saveProject(as = false): Promise<void> {
+    if (!this.items.length) return;
+    try {
+      const path = await backend.saveProject(this.projectRequest(), as ? null : this.projectPath);
+      if (!path) return;
+      this.projectPath = path;
+      this.dirty = false;
+      this.addRecent(path);
+      this.toast(t('project.saved', { name: this.projectName ?? path }), 'info');
+    } catch (e) {
+      this.toast(errorText(e));
+    }
+  }
+
+  private clearMat(): void {
+    for (const id of new Set(this.items.map((i) => i.design))) void backend.forgetDesign(id);
+    this.items = [];
+    this.designs = {};
     this.selected = null;
+    this.past = [];
+    this.future = [];
+    this.canUndo = false;
+    this.canRedo = false;
+    this.preview = null;
+  }
+
+  /** An empty mat: a new project. */
+  async newProject(): Promise<void> {
+    if (!(await this.confirmDiscard())) return;
+    this.clearMat();
+    this.projectPath = null;
+    this.dirty = false;
+    this.mirrored = false;
+    this.lastSession = null;
+    void backend.discardAutosave();
+  }
+
+  async openProjectDialog(): Promise<void> {
+    if (!(await this.confirmDiscard())) return;
+    try {
+      const picked = await backend.pickProject();
+      if (picked) this.loadProject(picked.project, picked.path);
+    } catch (e) {
+      this.toast(errorText(e));
+    }
+  }
+
+  async openProjectPath(path: string): Promise<void> {
+    if (!(await this.confirmDiscard())) return;
+    try {
+      this.loadProject(await backend.openProject(path), path);
+    } catch (e) {
+      this.toast(`${t('error.open', { name: path.split(/[\\/]/).pop() ?? path })}: ${errorText(e)}`);
+      this.recent = this.recent.filter((p) => p !== path);
+    }
+  }
+
+  /** Puts an opened project on the mat: its designs with their new ids, its items and settings. */
+  loadProject(opened: OpenedProject, path: string | null): void {
+    const state = opened.state as Partial<ProjectState>;
+    this.clearMat();
+    const ids = new Map<number, number>();
+    for (const { savedId, design } of opened.designs) {
+      ids.set(savedId, design.id);
+      this.designs[design.id] = design;
+    }
+    if (state.machineId && this.machines.some((m) => m.id === state.machineId)) this.machineId = state.machineId;
+    if (state.matId && this.machine?.mats.some((m) => m.id === state.matId)) this.matId = state.matId;
+    if (typeof state.byColor === 'boolean') this.byColor = state.byColor;
+    this.manualOrder = !!state.manualOrder;
+    this.order = state.order ?? [];
+    if (state.single) this.single = normalizeSettings(state.single);
+    if (state.prefs) {
+      for (const p of Object.values(state.prefs)) p.settings = normalizeSettings(p.settings);
+      this.prefs = { ...this.prefs, ...state.prefs };
+    }
+    this.printMode = !!state.printMode;
+    if (state.printSetup) this.printSetup = state.printSetup;
+    this.mirrored = !!state.mirrored;
+    this.items = (state.items ?? [])
+      .filter((i) => ids.has(i.design))
+      .map((i) => ({ ...i, id: nextItemId++, design: ids.get(i.design) as number, weed: i.weed ?? null, group: i.group ?? null, locked: !!i.locked }));
+    this.projectPath = path ?? state.projectPath ?? null;
+    this.dirty = path === null;
+    this.lastSession = null;
+    if (path) this.addRecent(path);
+    for (const w of opened.warnings) this.toast(w);
+    this.fitRequest++;
+  }
+
+  /** Picks up where the last session ended (kept automatically). */
+  resumeLastSession(): void {
+    if (this.lastSession) this.loadProject(this.lastSession, null);
+  }
+
+  /** These items and every other item of their groups. */
+  private withGroup(ids: number[]): number[] {
+    const groups = new Set(this.items.filter((i) => ids.includes(i.id) && i.group !== null).map((i) => i.group));
+    return this.items.filter((i) => ids.includes(i.id) || (i.group !== null && groups.has(i.group))).map((i) => i.id);
+  }
+
+  /** Adds an item (and its group) to the selection, or takes it out. */
+  toggleSelect(id: number): void {
+    const ids = this.withGroup([id]);
+    this.selection = this.selection.includes(id) ? this.selection.filter((s) => !ids.includes(s)) : [...this.selection, ...ids.filter((i) => !this.selection.includes(i))];
+  }
+
+  selectAll(): void {
+    this.selection = this.items.map((i) => i.id);
+  }
+
+  /** Selects what a box drawn on the mat touches; with `add`, on top of the selection. */
+  selectInBox(box: Box, add: boolean): void {
+    const hit = this.items.filter((i) => {
+      const b = this.boxes[i.id];
+      return b && b.x1 >= box.x0 && b.x0 <= box.x1 && b.y1 >= box.y0 && b.y0 <= box.y1;
+    });
+    const ids = this.withGroup(hit.map((i) => i.id));
+    this.selection = add ? [...new Set([...this.selection, ...ids])] : ids;
+  }
+
+  /** The selected items that may move (not locked). */
+  private movable(): Item[] {
+    return this.selectedItems.filter((i) => !i.locked);
+  }
+
+  removeSelected(): void {
+    if (!this.selection.length) return;
+    this.checkpoint();
+    const gone = new Set(this.selection);
+    this.items = this.items.filter((i) => !gone.has(i.id));
+    this.selection = [];
   }
 
   duplicateSelected(): void {
-    const item = this.selectedItem;
-    const box = item ? this.boxes[item.id] : null;
-    if (!item || !box) return;
+    const items = this.selectedItems;
+    if (!items.length) return;
+    if (items.length > 1) {
+      this.checkpoint();
+      const group = items.some((i) => i.group !== null) ? nextGroupId++ : null;
+      const copies = items.map((i) => ({ ...$state.snapshot(i), id: nextItemId++, cx: i.cx + 10, cy: i.cy + 10, group: i.group !== null ? group : null, locked: false }));
+      this.items.push(...copies);
+      this.selection = copies.map((c) => c.id);
+      return;
+    }
+    const item = items[0];
+    const box = this.boxes[item.id];
+    if (!box) return;
     this.checkpoint();
     // Next to the original where there is room: right, below, else a little offset.
     const w = box.x1 - box.x0;
@@ -954,53 +1272,181 @@ class AppState {
       return fits && clear;
     };
     const [dx, dy] = [[w + gap, 0], [0, h + gap], [-(w + gap), 0], [0, -(h + gap)]].find(([x, y]) => free(x, y)) ?? [10, 10];
-    const copy: Item = { ...$state.snapshot(item), id: nextItemId++, cx: item.cx + dx, cy: item.cy + dy };
+    const copy: Item = { ...$state.snapshot(item), id: nextItemId++, cx: item.cx + dx, cy: item.cy + dy, group: null, locked: false };
     this.items.push(copy);
     this.selected = copy.id;
   }
 
+  /** Turns the selection: one item about its own centre, several about the middle of their box. */
   rotateSelected(degrees: number): void {
-    const item = this.selectedItem;
-    if (!item) return;
+    const items = this.movable();
+    const box = this.selectionBox;
+    if (!items.length || !box) return;
     this.checkpoint();
-    item.angle = normalizeAngle(item.angle + degrees);
+    const mx = (box.x0 + box.x1) / 2;
+    const my = (box.y0 + box.y1) / 2;
+    const r = (degrees * Math.PI) / 180;
+    for (const item of items) {
+      if (items.length > 1) {
+        const dx = item.cx - mx;
+        const dy = item.cy - my;
+        item.cx = mx + dx * Math.cos(r) - dy * Math.sin(r);
+        item.cy = my + dx * Math.sin(r) + dy * Math.cos(r);
+      }
+      item.angle = normalizeAngle(item.angle + degrees);
+    }
   }
 
+  /** Mirrors the selection: one item about its own centre, several across the middle of their box. */
   mirrorSelected(horizontal: boolean): void {
-    const item = this.selectedItem;
-    if (!item) return;
+    const items = this.movable();
+    const box = this.selectionBox;
+    if (!items.length || !box) return;
     this.checkpoint();
-    // A mirror across the screen axis: the turn goes the other way.
-    if (horizontal) item.sx = -item.sx;
-    else item.sy = -item.sy;
-    item.angle = normalizeAngle(-item.angle);
+    for (const item of items) {
+      if (items.length > 1) {
+        if (horizontal) item.cx = box.x0 + box.x1 - item.cx;
+        else item.cy = box.y0 + box.y1 - item.cy;
+      }
+      // A mirror across the screen axis: the turn goes the other way.
+      if (horizontal) item.sx = -item.sx;
+      else item.sy = -item.sy;
+      item.angle = normalizeAngle(-item.angle);
+    }
   }
 
   nudgeSelected(dx: number, dy: number): void {
-    const item = this.selectedItem;
-    if (!item) return;
+    const items = this.movable();
+    if (!items.length) return;
     this.checkpoint();
-    item.cx += dx;
-    item.cy += dy;
+    for (const item of items) {
+      item.cx += dx;
+      item.cy += dy;
+    }
   }
 
   /** Moves the selection so its box starts at (x, y). */
   moveSelectedTo(x: number | null, y: number | null): void {
-    const item = this.selectedItem;
-    const box = item ? this.boxes[item.id] : null;
-    if (!item || !box) return;
+    const items = this.movable();
+    const box = this.selectionBox;
+    if (!items.length || !box) return;
     this.checkpoint();
-    if (x !== null) item.cx += x - box.x0;
-    if (y !== null) item.cy += y - box.y0;
+    for (const item of items) {
+      if (x !== null) item.cx += x - box.x0;
+      if (y !== null) item.cy += y - box.y0;
+    }
   }
 
   centerSelected(): void {
-    const item = this.selectedItem;
-    const box = item ? this.boxes[item.id] : null;
-    if (!item || !box) return;
+    const items = this.movable();
+    const box = this.selectionBox;
+    if (!items.length || !box) return;
     this.checkpoint();
-    item.cx += this.area.w / 2 - (box.x0 + box.x1) / 2;
-    item.cy += this.area.h / 2 - (box.y0 + box.y1) / 2;
+    for (const item of items) {
+      item.cx += this.area.w / 2 - (box.x0 + box.x1) / 2;
+      item.cy += this.area.h / 2 - (box.y0 + box.y1) / 2;
+    }
+  }
+
+  /**
+   * Lines the selection up: several items along the edge or middle of their common box, a single
+   * one along the cutting area's.
+   */
+  alignSelected(kind: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom'): void {
+    const items = this.movable();
+    if (!items.length) return;
+    const frame = items.length > 1 || this.selectedItems.length > 1 ? this.selectionBox : { x0: 0, y0: 0, x1: this.area.w, y1: this.area.h };
+    if (!frame) return;
+    this.checkpoint();
+    for (const item of items) {
+      const b = this.boxes[item.id];
+      if (!b) continue;
+      if (kind === 'left') item.cx += frame.x0 - b.x0;
+      else if (kind === 'right') item.cx += frame.x1 - b.x1;
+      else if (kind === 'hcenter') item.cx += (frame.x0 + frame.x1) / 2 - (b.x0 + b.x1) / 2;
+      else if (kind === 'top') item.cy += frame.y0 - b.y0;
+      else if (kind === 'bottom') item.cy += frame.y1 - b.y1;
+      else item.cy += (frame.y0 + frame.y1) / 2 - (b.y0 + b.y1) / 2;
+    }
+  }
+
+  /** Spreads three or more items evenly between the outermost two, across or down. */
+  distributeSelected(axis: 'x' | 'y'): void {
+    const items = this.movable().filter((i) => this.boxes[i.id]);
+    if (items.length < 3) return;
+    this.checkpoint();
+    const lo = (i: Item) => (axis === 'x' ? this.boxes[i.id].x0 : this.boxes[i.id].y0);
+    const size = (i: Item) => (axis === 'x' ? this.boxes[i.id].x1 - this.boxes[i.id].x0 : this.boxes[i.id].y1 - this.boxes[i.id].y0);
+    const sorted = [...items].sort((a, b) => lo(a) + size(a) / 2 - (lo(b) + size(b) / 2));
+    const first = lo(sorted[0]);
+    const last = lo(sorted[sorted.length - 1]) + size(sorted[sorted.length - 1]);
+    const gap = (last - first - sorted.reduce((sum, i) => sum + size(i), 0)) / (sorted.length - 1);
+    let at = first;
+    for (const item of sorted) {
+      const shift = at - lo(item);
+      if (axis === 'x') item.cx += shift;
+      else item.cy += shift;
+      at += size(item) + gap;
+    }
+  }
+
+  /** Several items become a group: selected and moved together. */
+  groupSelected(): void {
+    if (this.selectedItems.length < 2) return;
+    this.checkpoint();
+    const group = nextGroupId++;
+    for (const item of this.selectedItems) item.group = group;
+  }
+
+  ungroupSelected(): void {
+    if (!this.selectedItems.some((i) => i.group !== null)) return;
+    this.checkpoint();
+    for (const item of this.selectedItems) item.group = null;
+  }
+
+  lockSelected(locked: boolean): void {
+    if (!this.selectedItems.length) return;
+    this.checkpoint();
+    for (const item of this.selectedItems) item.locked = locked;
+  }
+
+  /** Welds the selected items into one design (overlaps become one outline). */
+  async weldSelected(): Promise<void> {
+    const items = this.selectedItems;
+    if (items.length < 2) return;
+    const request = items.flatMap((item) => {
+      const design = this.designs[item.design];
+      return design ? [{ design: item.design, matrix: placementMatrix(item, design), cut: $state.snapshot(item.cut), print: false, weed: null }] : [];
+    });
+    try {
+      const design = await backend.weldItems(request);
+      this.checkpoint();
+      this.designs[design.id] = design;
+      const gone = new Set(items.map((i) => i.id));
+      this.items = this.items.filter((i) => !gone.has(i.id));
+      const [x0, y0, x1, y1] = design.bbox;
+      const item: Item = { id: nextItemId++, design: design.id, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, angle: 0, sx: 1, sy: 1, cut: { kind: 'lines', outerOnly: false, hidden: [] }, print: false, weed: null, group: null, locked: false };
+      this.items.push(item);
+      this.selected = item.id;
+      this.toast(t('weld.done', { n: items.length }), 'info');
+    } catch (e) {
+      this.toast(errorText(e));
+    }
+  }
+
+  /** Joins the selected design's line pieces and drops lines drawn twice. */
+  async tidySelected(): Promise<void> {
+    const item = this.selectedItem;
+    if (!item) return;
+    try {
+      const result = await backend.tidyDesign(item.design);
+      this.designs[item.design] = result.design;
+      if (item.cut.kind === 'lines' && result.joined + result.removed > 0) item.cut = { ...item.cut, hidden: [] };
+      this.dirty = true;
+      this.toast(result.joined + result.removed > 0 ? t('tidy.done', { joined: result.joined, removed: result.removed }) : t('tidy.nothing'), 'info');
+    } catch (e) {
+      this.toast(errorText(e));
+    }
   }
 
   // Planning
@@ -1174,6 +1620,103 @@ class AppState {
     void this.planTest();
   }
 
+  /** The pen's settings for test drawings: the pen colour's, else the first pen material's. */
+  private penSettings(): Settings {
+    const pen = Object.values(this.prefs).find((p) => p.settings.tool === 'pen');
+    if (pen) return { ...$state.snapshot(pen.settings) };
+    const material = this.materials.find((m) => m.pen);
+    return material ? { ...$state.snapshot(material.settings), tool: 'pen' } : defaultSettings('pen');
+  }
+
+  /** Opens the alignment test: nested corners at the edges of a sheet in the grid's corner. */
+  async openAlignment(paper: 'a4' | 'letter' = this.printSetup.paper): Promise<void> {
+    const size = PAPERS[paper];
+    const area = this.mat ? { w: this.mat.areaWidthMm, h: this.mat.id === 'none' ? 3000 : this.mat.areaHeightMm } : this.area;
+    try {
+      const design = await backend.alignmentDesign(Math.min(size.w, area.w), Math.min(size.h, area.h));
+      this.check = { design, settings: this.check?.settings ?? this.penSettings(), paper };
+    } catch (e) {
+      this.toast(errorText(e));
+      return;
+    }
+    this.preview = null;
+    this.send = { phase: 'setup', mode: 'align', target: this.targetValue(), sent: 0, total: 0, pass: 0, pausedBefore: null, pausing: false, version: null, error: null, plan: null };
+    await this.planCheck();
+  }
+
+  /** Opens the print and cut calibration: needs print and cut on, for the marks. */
+  async openCalibration(): Promise<void> {
+    if (!this.printMode) this.printMode = true;
+    const job = this.calibrationRequest();
+    if (!job) {
+      this.toast(t('print.noRoom'));
+      return;
+    }
+    try {
+      const design = await backend.calibrationDesign(job);
+      this.check = { design, settings: this.check?.settings ?? this.penSettings(), paper: this.printSetup.paper };
+    } catch (e) {
+      this.toast(errorText(e));
+      return;
+    }
+    this.preview = null;
+    this.send = { phase: 'setup', mode: 'calibrate', target: this.targetValue(), sent: 0, total: 0, pass: 0, pausedBefore: null, pausing: false, version: null, error: null, plan: null };
+    await this.planCheck();
+  }
+
+  /** A job that only carries the print setup, for the calibration sheet and crosses. */
+  private calibrationRequest(): JobRequest | null {
+    if (!this.machine || !this.mat || !this.marks) return null;
+    return {
+      machine: this.machine.id,
+      mat: this.mat.id,
+      items: [],
+      print: $state.snapshot(this.printSetup),
+      byColor: false,
+      manualOrder: false,
+      settings: defaultSettings('pen'),
+      colors: [],
+    };
+  }
+
+  async saveCalibrationSheet(): Promise<void> {
+    const job = this.calibrationRequest();
+    if (!job) return;
+    try {
+      const path = await backend.calibrationSheet(job);
+      if (path) this.toast(t('print.saved', { path }), 'info');
+    } catch (e) {
+      this.toast(errorText(e));
+    }
+  }
+
+  async planCheck(): Promise<void> {
+    const job = this.checkJob;
+    const send = this.send;
+    if (!job || !send) return;
+    try {
+      send.plan = await backend.planJob(job);
+      send.error = null;
+    } catch (e) {
+      send.plan = null;
+      send.error = e as ApiError;
+    }
+  }
+
+  /** What the alignment test showed at the left and top edges becomes part of the correction. */
+  applyAlignment(left: number, top: number): void {
+    const c = this.corrections[this.machineId]?.mat ?? [0, 0];
+    this.setCorrection('mat', [Math.round((c[0] + left) * 10) / 10, Math.round((c[1] + top) * 10) / 10]);
+    this.toast(t('align.applied', { x: c[0] + left, y: c[1] + top }), 'info');
+  }
+
+  /** Where the drawn crosses met the printed rulers: the print and cut correction moves back by it. */
+  applyCalibration(x: number, y: number): void {
+    const c = this.corrections[this.machineId]?.print ?? [0, 0];
+    this.setCorrection('print', [Math.round((c[0] - x) * 10) / 10, Math.round((c[1] - y) * 10) / 10]);
+    this.toast(t('calib.applied', { x: c[0] - x, y: c[1] - y }), 'info');
+  }
+
   /** Opens the send dialog for a test cut with these settings. */
   async openTestCut(settings: Settings, color: string | null): Promise<void> {
     try {
@@ -1228,7 +1771,7 @@ class AppState {
 
   async startSend(): Promise<void> {
     const send = this.send;
-    const job = send?.mode === 'test' ? this.testJob : this.job;
+    const job = send?.mode === 'test' ? this.testJob : send?.mode === 'align' || send?.mode === 'calibrate' ? this.checkJob : this.job;
     if (!job || !send) return;
     send.target = this.targetValue();
     if (send.mode === 'job') send.plan = this.plan;
@@ -1306,6 +1849,7 @@ class AppState {
     const s = this.send;
     if (s && ['connecting', 'running', 'paused', 'finishing', 'stopping'].includes(s.phase)) return;
     this.send = null;
+    this.check = null;
   }
 }
 

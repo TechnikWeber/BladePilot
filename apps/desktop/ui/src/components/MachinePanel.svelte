@@ -38,6 +38,7 @@
   });
 
   const found = $derived(app.device);
+  const canCut = $derived(!!app.job && !!app.plan && !app.planError);
 
   // While a machine is chosen and idle, ask it every few seconds how it is, so "ready" stays true
   // and an unplugged cable shows at once.
@@ -112,6 +113,12 @@
     {/if}
     <button class="icon-btn sm" title={t('machine.refresh')} disabled={app.checking} onclick={() => app.checkStatus()}><Icon name="refresh" size={14} /></button>
   </div>
+  <div class="actions">
+    <button class="btn" class:active={!!app.preview} title={t('top.previewHint')} disabled={!canCut} onclick={() => (app.preview ? app.closePreview() : app.openPreview())}>
+      <Icon name="play" size={14} />{t('top.preview')}
+    </button>
+    <button class="btn primary" title={t('top.sendHint')} disabled={!canCut} onclick={() => app.openSend()}><Icon name="send" size={16} />{t('top.send')}</button>
+  </div>
   {#if app.usb?.needed && !app.usb.installed}
     <div class="note warn usb">
       <Icon name="usb" size={15} /><span>{t('usb.missing')}</span>
@@ -175,6 +182,24 @@
   .status-text {
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .actions .btn {
+    justify-content: center;
+    height: 36px;
+  }
+
+  .actions .btn.active {
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+    color: var(--accent);
   }
 
   /* A real machine: the whole block says how it is. */

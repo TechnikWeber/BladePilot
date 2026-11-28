@@ -3,6 +3,7 @@
   // for tool changes, pause and stop. The job runs on the Rust side; this only shows it.
   import { app, deviceKey, toolName, type TestCorner } from '../lib/state.svelte';
   import { reportedTool } from '../lib/materials';
+  import { backend } from '../lib/api';
   import { t, errorText } from '../lib/i18n/index.svelte';
   import { displayColor } from '../lib/theme.svelte';
   import { fmtLength } from '../lib/format';
@@ -17,12 +18,47 @@
   const running = $derived(!!s && ['connecting', 'running', 'paused', 'finishing', 'stopping'].includes(s.phase));
   const usb = $derived(app.target !== 'virtual');
   const testing = $derived(s?.mode === 'test');
-  const canStart = $derived(!!plan && (testing ? !s?.error : !app.planError) && (!usb || app.understood));
+  /** The alignment test or the print and cut calibration. */
+  const checking = $derived(s?.mode === 'align' || s?.mode === 'calibrate');
+  const canStart = $derived(!!plan && (testing || checking ? !s?.error : !app.planError) && (!usb || app.understood));
+  /** What the user read off after an alignment test or calibration. */
+  let readA = $state(0);
+  let readB = $state(0);
+  let applied = $state(false);
+  $effect(() => {
+    if (s?.phase === 'connecting') {
+      readA = 0;
+      readB = 0;
+      applied = false;
+    }
+  });
+  /** Hints for what to do about an error. */
+  const HINTS: Record<string, 'hint.usb' | 'hint.noMedia' | 'hint.bluetooth' | 'hint.noReply' | 'hint.timeout' | 'hint.marksNotFound' | 'hint.wrongMachine'> = {
+    usb: 'hint.usb',
+    noMedia: 'hint.noMedia',
+    bluetooth: 'hint.bluetooth',
+    bluetoothLe: 'hint.bluetooth',
+    noReply: 'hint.noReply',
+    timeout: 'hint.timeout',
+    marksNotFound: 'hint.marksNotFound',
+    wrongMachine: 'hint.wrongMachine',
+  };
+
+  async function saveDiagnosis(): Promise<void> {
+    try {
+      const path = await backend.saveText(await backend.diagnostics(), 'bladepilot-diagnosis.txt');
+      if (path) app.toast(t('diag.saved', { path }), 'info');
+    } catch (e) {
+      app.toast(errorText(e));
+    }
+  }
   const percent = $derived(s && s.total > 0 ? Math.min(100, (s.sent / s.total) * 100) : 0);
   const passes = $derived(plan?.passes ?? []);
   const current = $derived(s && passes[s.pass] ? passes[s.pass] : null);
   /** Only pens: the job draws, it does not cut. */
-  const drawing = $derived(testing ? app.test?.settings.tool === 'pen' : passes.length > 0 && passes.every((p) => p.settings.tool === 'pen'));
+  const drawing = $derived(
+    testing ? app.test?.settings.tool === 'pen' : checking ? app.check?.settings.tool === 'pen' : passes.length > 0 && passes.every((p) => p.settings.tool === 'pen'),
+  );
   const CORNERS: { id: TestCorner; arrow: string; key: 'test.cornerTl' | 'test.cornerTr' | 'test.cornerBl' | 'test.cornerBr' }[] = [
     { id: 'tl', arrow: '↖', key: 'test.cornerTl' },
     { id: 'tr', arrow: '↗', key: 'test.cornerTr' },
@@ -38,7 +74,7 @@
   const toolMismatch = $derived.by(() => {
     if (app.target === 'virtual' || !s || s.phase !== 'setup') return null;
     const reported = reportedTool(app.status?.tools[0]);
-    const first = testing ? app.test?.settings.tool : passes[0]?.settings.tool;
+    const first = testing ? app.test?.settings.tool : checking ? app.check?.settings.tool : passes[0]?.settings.tool;
     if (!reported || !first || reported === first) return null;
     return { reported, wanted: first };
   });
@@ -64,11 +100,13 @@
 <svelte:window onkeydown={onKey} />
 
 {#if s}
-  <div class="backdrop" class:side={testing} role="presentation" onpointerdown={(e) => e.target === e.currentTarget && !running && app.closeSend()}>
+  <div class="backdrop" class:side={testing || checking} role="presentation" onpointerdown={(e) => e.target === e.currentTarget && !running && app.closeSend()}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="send-title">
       <header>
-        <div class="title-icon"><Icon name={testing ? 'testCut' : 'send'} size={18} /></div>
-        <h2 id="send-title">{testing ? (drawing ? t('test.titlePen') : t('test.title')) : t('send.title')}</h2>
+        <div class="title-icon"><Icon name={testing || checking ? 'testCut' : 'send'} size={18} /></div>
+        <h2 id="send-title">
+          {s.mode === 'align' ? t('align.title') : s.mode === 'calibrate' ? t('calib.title') : testing ? (drawing ? t('test.titlePen') : t('test.title')) : t('send.title')}
+        </h2>
         {#if !running}
           <button class="icon-btn" aria-label={t('send.close')} onclick={() => app.closeSend()}><Icon name="close" /></button>
         {/if}
@@ -103,6 +141,29 @@
               <div class="error-box"><Icon name="alert" size={15} />{t('test.outside')}</div>
             {/if}
             <div class="label summary-label">{t('send.target')}</div>
+          {:else if checking && app.check}
+            {#if s.mode === 'align'}
+              <p class="lead">{t('align.body')}</p>
+              <div class="corners">
+                <span class="hint">{t('align.paper')}</span>
+                <div class="segmented">
+                  <button class:on={app.check.paper === 'a4'} onclick={() => app.openAlignment('a4')}>A4</button>
+                  <button class:on={app.check.paper === 'letter'} onclick={() => app.openAlignment('letter')}>Letter</button>
+                </div>
+              </div>
+            {:else}
+              <p class="lead">{t('calib.body')}</p>
+              <button class="btn" onclick={() => app.saveCalibrationSheet()}><Icon name="printer" size={15} />{t('calib.sheet')}</button>
+            {/if}
+            <div class="label summary-label">{t('test.settings')}</div>
+            <div class="test-settings">
+              <span class="p-tool"><Icon name={app.check.settings.tool === 'pen' ? 'pen' : 'blade'} size={13} />{toolOf(app.check.settings)}</span>
+              <span class="p-details">{details(app.check.settings)}</span>
+            </div>
+            {#if s.error}
+              <div class="error-box"><Icon name="alert" size={15} />{errorText(s.error)}</div>
+            {/if}
+            <div class="label summary-label">{t('send.target')}</div>
           {:else}
             <div class="label">{t('send.target')}</div>
           {/if}
@@ -132,7 +193,7 @@
             </div>
           {/if}
 
-          {#if !testing}
+          {#if !testing && !checking}
           <div class="label summary-label">{t('send.summary')}</div>
           <div class="summary">
             <div class="machine">
@@ -168,7 +229,7 @@
         </div>
         <footer>
           <button class="btn" onclick={() => app.closeSend()}>{t('send.cancel')}</button>
-          <button class="btn primary lg" disabled={!canStart} onclick={() => app.startSend()}><Icon name="play" size={14} />{testing ? (drawing ? t('test.startPen') : t('test.start')) : t('send.start')}</button>
+          <button class="btn primary lg" disabled={!canStart} onclick={() => app.startSend()}><Icon name="play" size={14} />{s.mode === 'align' ? t('align.start') : s.mode === 'calibrate' ? t('calib.start') : testing ? (drawing ? t('test.startPen') : t('test.start')) : t('send.start')}</button>
         </footer>
       {:else}
         <div class="content running">
@@ -176,8 +237,64 @@
             <div class="result {s.phase}">
               <div class="r-icon"><Icon name={s.phase === 'done' ? 'check' : s.phase === 'stopped' ? 'stop' : 'alert'} size={26} /></div>
               <h3>{s.phase === 'done' ? t('send.done') : s.phase === 'stopped' ? t('send.stopped') : t('send.failed')}</h3>
-              <p>{s.phase === 'done' ? (testing ? (drawing ? t('test.doneBodyPen') : t('test.doneBody')) : drawing ? t('send.doneBodyPen') : t('send.doneBody')) : s.phase === 'stopped' ? t('send.stoppedBody') : errorText(s.error)}</p>
+              <p>
+                {s.phase === 'done'
+                  ? s.mode === 'align'
+                    ? t('align.doneBody')
+                    : s.mode === 'calibrate'
+                      ? t('calib.doneBody')
+                      : testing
+                        ? drawing
+                          ? t('test.doneBodyPen')
+                          : t('test.doneBody')
+                        : drawing
+                          ? t('send.doneBodyPen')
+                          : t('send.doneBody')
+                  : s.phase === 'stopped'
+                    ? t('send.stoppedBody')
+                    : errorText(s.error)}
+              </p>
+              {#if s.phase === 'failed' && s.error && HINTS[s.error.code]}
+                <p class="hint fix">{t(HINTS[s.error.code])}</p>
+              {/if}
+              {#if s.phase === 'failed'}
+                <button class="btn ghost small" onclick={saveDiagnosis}><Icon name="info" size={14} />{t('diag.save')}</button>
+              {/if}
             </div>
+            {#if s.phase === 'done' && checking}
+              <div class="reading">
+                <NumberField
+                  label={s.mode === 'align' ? t('align.left') : t('calib.x')}
+                  value={readA}
+                  digits={1}
+                  step={0.5}
+                  min={-10}
+                  max={10}
+                  unit="mm"
+                  onchange={(v) => (readA = v ?? 0)}
+                />
+                <NumberField
+                  label={s.mode === 'align' ? t('align.top') : t('calib.y')}
+                  value={readB}
+                  digits={1}
+                  step={0.5}
+                  min={-10}
+                  max={10}
+                  unit="mm"
+                  onchange={(v) => (readB = v ?? 0)}
+                />
+                <button
+                  class="btn primary"
+                  disabled={applied || (readA === 0 && readB === 0)}
+                  onclick={() => {
+                    if (s.mode === 'align') app.applyAlignment(readA, readB);
+                    else app.applyCalibration(readA, readB);
+                    applied = true;
+                  }}><Icon name="check" size={14} />{t('align.apply')}</button
+                >
+              </div>
+              <p class="hint">{s.mode === 'align' ? t('align.readHint') : t('calib.readHint')}</p>
+            {/if}
           {:else if s.phase === 'paused' && s.pausedBefore !== null && current}
             <div class="change">
               <div class="c-icon"><Icon name={current.toolChange ? 'hand' : 'pause'} size={22} /></div>
@@ -236,6 +353,8 @@
           {:else}
             {#if testing}
               <button class="btn" onclick={() => { app.nextTestSpot(); void app.startSend(); }}><Icon name="testCut" size={15} />{t('test.again')}</button>
+            {:else if checking}
+              <button class="btn" onclick={() => { s.phase = 'setup'; void app.planCheck(); }}><Icon name="restart" size={15} />{t('align.again')}</button>
             {:else}
               <button class="btn" onclick={() => app.startSend()}><Icon name="restart" size={15} />{drawing ? t('send.againPen') : t('send.again')}</button>
             {/if}
@@ -280,6 +399,19 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     font-size: 12.5px;
+  }
+
+  .reading {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    align-items: end;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .hint.fix {
+    margin-top: 6px;
+    color: var(--text);
   }
 
   .corners {

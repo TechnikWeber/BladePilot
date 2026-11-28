@@ -10,7 +10,22 @@ export function initTheme(): void {
   }
   const query = matchMedia('(prefers-color-scheme: dark)');
   dark = query.matches;
-  query.addEventListener('change', (e) => (dark = e.matches));
+  query.addEventListener('change', (e) => {
+    if (!document.documentElement.dataset.theme) dark = e.matches;
+  });
+}
+
+/** Light, dark, or the system's choice (the setting in BladePilot's settings). */
+export function setTheme(choice: 'system' | 'light' | 'dark'): void {
+  if (new URLSearchParams(location.search).has('theme')) return;
+  const root = document.documentElement;
+  if (choice === 'system') {
+    delete root.dataset.theme;
+    dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  } else {
+    root.dataset.theme = choice;
+    dark = choice === 'dark';
+  }
 }
 
 export function isDark(): boolean {

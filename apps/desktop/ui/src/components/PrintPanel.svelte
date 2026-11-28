@@ -55,6 +55,7 @@
       <Icon name="printer" size={16} />{t('print.save')}
     </button>
     <p class="hint">{t('print.hint')}</p>
+    <button class="btn ghost calibrate" onclick={() => app.openCalibration()}><Icon name="testCut" size={14} />{t('calib.button')}</button>
   {/if}
 </section>
 
@@ -73,6 +74,10 @@
 
   .hint {
     margin: 8px 0 0;
+  }
+
+  .calibrate {
+    margin-top: 8px;
   }
 
   .note {

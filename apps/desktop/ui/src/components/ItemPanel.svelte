@@ -70,6 +70,7 @@
       <NumberField label={t('item.h')} value={toUnit(size.h)} {digits} {step} min={0.01} unit={unitLabel()} onchange={(v) => setSize('h', v)} />
       <NumberField label={t('item.angle')} value={item.angle} digits={1} step={1} min={-360} max={360} unit="°" onchange={setAngle} />
       <div class="tools">
+        <button class="icon-btn" class:active={item.locked} title={item.locked ? t('item.unlock') : t('item.lock')} onclick={() => app.lockSelected(!item.locked)}><Icon name={item.locked ? 'lock' : 'unlock'} /></button>
         <button class="icon-btn" class:active={keepRatio} title={t('item.keepRatio')} onclick={() => (keepRatio = !keepRatio)}><Icon name={keepRatio ? 'link' : 'unlink'} /></button>
         <button class="icon-btn" title={t('item.toOrigin')} onclick={() => app.moveSelectedTo(0, 0)}><Icon name="corner" /></button>
         <button class="icon-btn" title={t('item.center')} onclick={() => app.centerSelected()}><Icon name="center" /></button>
@@ -93,6 +94,9 @@
           <span class="track"></span>{t('cut.pick')}
         </label>
         {#if app.lineSelect}<p class="hint">{t('cut.pickHint')}</p>{/if}
+        {#if !design.image}
+          <button class="btn small tidy" title={t('tidy.hint')} onclick={() => app.tidySelected()}><Icon name="tidy" size={14} />{t('tidy.button')}</button>
+        {/if}
         {#if lines.hidden.length}
           <div class="hidden-row">
             <span class="hint">{lines.hidden.length === 1 ? t('cut.hiddenOne') : t('cut.hidden', { n: lines.hidden.length })}</span>
@@ -191,6 +195,35 @@
         {#each design.warnings as w (w)}<div class="hint">{w}</div>{/each}
       </div>
     {/if}
+  {:else if app.selectedItems.length > 1}
+    {@const items = app.selectedItems}
+    {@const grouped = items.some((i) => i.group !== null)}
+    {@const locked = items.some((i) => i.locked)}
+    <div class="name"><Icon name="layers" size={15} /><span>{t('multi.count', { n: items.length })}</span></div>
+    <span class="label">{t('multi.align')}</span>
+    <div class="icon-row">
+      <button class="icon-btn" title={t('multi.alignLeft')} disabled={locked} onclick={() => app.alignSelected('left')}><Icon name="alignLeft" /></button>
+      <button class="icon-btn" title={t('multi.alignHCenter')} disabled={locked} onclick={() => app.alignSelected('hcenter')}><Icon name="alignHCenter" /></button>
+      <button class="icon-btn" title={t('multi.alignRight')} disabled={locked} onclick={() => app.alignSelected('right')}><Icon name="alignRight" /></button>
+      <span class="gap"></span>
+      <button class="icon-btn" title={t('multi.alignTop')} disabled={locked} onclick={() => app.alignSelected('top')}><Icon name="alignTop" /></button>
+      <button class="icon-btn" title={t('multi.alignVCenter')} disabled={locked} onclick={() => app.alignSelected('vcenter')}><Icon name="alignVCenter" /></button>
+      <button class="icon-btn" title={t('multi.alignBottom')} disabled={locked} onclick={() => app.alignSelected('bottom')}><Icon name="alignBottom" /></button>
+      <span class="gap"></span>
+      <button class="icon-btn" title={t('multi.distributeX')} disabled={locked || items.length < 3} onclick={() => app.distributeSelected('x')}><Icon name="distributeX" /></button>
+      <button class="icon-btn" title={t('multi.distributeY')} disabled={locked || items.length < 3} onclick={() => app.distributeSelected('y')}><Icon name="distributeY" /></button>
+    </div>
+    <div class="multi-actions">
+      {#if grouped}
+        <button class="btn" onclick={() => app.ungroupSelected()}><Icon name="ungroup" size={15} />{t('multi.ungroup')}</button>
+      {:else}
+        <button class="btn" onclick={() => app.groupSelected()}><Icon name="group" size={15} />{t('multi.group')}</button>
+      {/if}
+      <button class="btn" onclick={() => app.lockSelected(!locked)}><Icon name={locked ? 'unlock' : 'lock'} size={15} />{locked ? t('item.unlock') : t('item.lock')}</button>
+      <button class="btn" title={t('weld.hint')} onclick={() => app.weldSelected()}><Icon name="weld" size={15} />{t('weld.button')}</button>
+      <button class="btn danger-ghost" onclick={() => app.removeSelected()}><Icon name="trash" size={15} />{t('top.delete')}</button>
+    </div>
+    <p class="hint">{t('multi.hint')}</p>
   {:else}
     <p class="hint">{t('item.none')}</p>
   {/if}
@@ -248,6 +281,36 @@
 
   .name .edit {
     margin-left: auto;
+  }
+
+  .icon-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    margin: 4px 0 12px;
+  }
+
+  .icon-row .gap {
+    width: 8px;
+  }
+
+  .multi-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .multi-actions .btn {
+    justify-content: center;
+  }
+
+  .danger-ghost {
+    color: var(--danger);
+  }
+
+  .tidy {
+    align-self: flex-start;
   }
 
   .copies {
