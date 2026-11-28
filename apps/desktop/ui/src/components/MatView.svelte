@@ -8,6 +8,7 @@
   import Icon from './Icon.svelte';
   import PreviewLayer from './PreviewLayer.svelte';
   import { backend } from '../lib/api';
+  import { wheelAction, zoomFactor } from '../lib/navigation';
 
   const MARGIN_SIDE = 12.7;
   const MARGIN_TOP = 25.4;
@@ -78,16 +79,16 @@
     return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale };
   }
 
-  /** How much a wheel step zooms; a pinch in Chromium comes as a wheel with Ctrl and small steps. */
-  function wheelFactor(e: WheelEvent): number {
-    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-    return Math.exp(-delta * (e.ctrlKey && Math.abs(delta) < 50 ? 0.01 : 0.0018));
-  }
-
+  /** Two fingers or the wheel move the view; Ctrl or a pinch zooms around the pointer. */
   function onWheel(e: WheelEvent): void {
     e.preventDefault();
+    const action = wheelAction(e, app.scrollMode);
+    if (action.kind === 'pan') {
+      app.scrollBy(action.dx, action.dy);
+      return;
+    }
     const rect = svgEl?.getBoundingClientRect();
-    app.zoomBy(wheelFactor(e), e.clientX - (rect?.left ?? 0), e.clientY - (rect?.top ?? 0));
+    app.zoomBy(action.factor, e.clientX - (rect?.left ?? 0), e.clientY - (rect?.top ?? 0));
   }
 
   // Only the mat zooms, never the page with its toolbar and panels. The wheel listener has to be
@@ -99,7 +100,8 @@
     const elsewhere = (e: WheelEvent) => {
       if (!e.ctrlKey || el.contains(e.target as Node)) return;
       e.preventDefault();
-      app.zoomBy(wheelFactor(e));
+      const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      app.zoomBy(zoomFactor(delta, Math.abs(delta) < 50));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('wheel', elsewhere, { passive: false });
@@ -294,8 +296,10 @@
   }
 
   function onBackgroundDown(e: PointerEvent): void {
-    // Middle button, Space or Alt: pan. Left button: draw a box to select (Shift adds to it).
-    if (e.button === 1 || (e.button === 0 && (spaceDown || e.altKey || app.preview))) {
+    // Right or middle button, Space or Alt, a finger on a touch screen: pan (also when the drag
+    // starts on a design). Left button: draw a box to select (Shift adds to it).
+    const touch = e.pointerType === 'touch';
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && (spaceDown || e.altKey || app.preview || touch))) {
       drag = { kind: 'pan', start: { x: e.clientX, y: e.clientY }, orig: { x: view.x, y: view.y } };
       svgEl?.setPointerCapture(e.pointerId);
     } else if (e.button === 0) {
@@ -478,7 +482,11 @@
       const small = !band || (band.x1 - band.x0) * view.scale < 4 && (band.y1 - band.y0) * view.scale < 4;
       if (small) {
         if (!drag.add) app.selected = null;
-      } else if (band) app.selectInBox(band, drag.add);
+      } else if (band) {
+        app.selectInBox(band, drag.add);
+        // A box that caught nothing was perhaps meant to move the view: say once how that goes.
+        if (!app.selection.length) app.hintOnce('nav', t('nav.hint'));
+      }
       band = null;
     }
     drag = null;
@@ -538,6 +546,7 @@
     {height}
     viewBox="{-view.x / view.scale} {-view.y / view.scale} {width / view.scale} {height / view.scale}"
     onpointerdown={onBackgroundDown}
+    oncontextmenu={(e) => e.preventDefault()}
     onpointermove={onMove}
     onpointerup={onUp}
     onpointercancel={onUp}

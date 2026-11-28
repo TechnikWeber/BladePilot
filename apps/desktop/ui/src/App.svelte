@@ -228,6 +228,11 @@
       const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
       const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
       app.nudgeSelected(dx, dy);
+    } else if (e.key.startsWith('Arrow')) {
+      // Nothing selected: the arrows move the view (Shift: further).
+      e.preventDefault();
+      const px = e.shiftKey ? 240 : 60;
+      app.scrollBy(e.key === 'ArrowLeft' ? -px : e.key === 'ArrowRight' ? px : 0, e.key === 'ArrowUp' ? -px : e.key === 'ArrowDown' ? px : 0);
     }
   }
 </script>

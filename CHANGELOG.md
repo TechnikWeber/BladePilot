@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 – 2026-11-28
+
+Moving around the mat without a middle mouse button.
+
+- **Two fingers move the view, a pinch zooms**, as in Inkscape and on every touchpad; Ctrl with
+  the wheel zooms too. With a mouse the wheel scrolls (Shift: sideways). Who prefers the wheel to
+  zoom switches **Wheel and two fingers** to **Zoom** in the settings.
+- **Dragging with the right mouse button moves the view**, also when it starts on a design; the
+  middle button, Space and Alt with a drag still do. On a touch screen one finger moves it.
+- **The arrow keys move the view** when nothing is selected (Shift: further).
+- A selection box that catches nothing says once how to move the view.
+
 ## 0.9.0 – 2026-11-28
 
 Smoother at the machine: only the mat zooms, settings with sliders, heat transfer vinyl that stays

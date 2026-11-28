@@ -33,6 +33,7 @@ import { errorText, t } from './i18n/index.svelte';
 import { setTheme } from './theme.svelte';
 import type { Key } from './i18n/en';
 import { BUILTIN_MATERIALS, type Material, loadMaterials, matchMaterial, normalizeTool, storeMaterials } from './materials';
+import type { ScrollMode } from './navigation';
 
 export interface Item extends Placement {
   id: number;
@@ -247,6 +248,7 @@ interface StoredPrefs {
   theme?: 'system' | 'light' | 'dark';
   language?: 'system' | 'de' | 'en';
   corrections?: Record<string, Correction>;
+  scroll?: ScrollMode;
   machineId?: string;
   matId?: string;
   unit?: 'mm' | 'in';
@@ -308,6 +310,8 @@ class AppState {
   mirrorAuto = $state(false);
   /** The mat's grid and rulers: like the measurements, or always centimetres or inches. */
   gridUnit = $state<'auto' | 'cm' | 'in'>('auto');
+  /** What the wheel and two fingers on the touchpad do: move the view (Ctrl zooms) or zoom. */
+  scrollMode = $state<ScrollMode>('pan');
   gridInch = $derived(this.gridUnit === 'in' || (this.gridUnit === 'auto' && this.unit === 'in'));
   themeChoice = $state<'system' | 'light' | 'dark'>('system');
   languageChoice = $state<'system' | 'de' | 'en'>('system');
@@ -656,6 +660,7 @@ class AppState {
     if (stored.theme) this.themeChoice = stored.theme;
     if (stored.language) this.languageChoice = stored.language;
     if (stored.corrections) this.corrections = stored.corrections;
+    if (stored.scroll === 'pan' || stored.scroll === 'zoom') this.scrollMode = stored.scroll;
     try {
       const recent = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
       if (Array.isArray(recent)) this.recent = recent.filter((r) => typeof r === 'string').slice(0, 8);
@@ -721,6 +726,7 @@ class AppState {
       theme: this.themeChoice,
       language: this.languageChoice,
       corrections: $state.snapshot(this.corrections),
+      scroll: this.scrollMode,
     };
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify(data));
@@ -749,12 +755,37 @@ class AppState {
     this.savePrefs();
   }
 
+  /** Moves the view like a page scrolls: positive `dy` shows more of what lies below. */
+  scrollBy(dx: number, dy: number): void {
+    const v = this.view;
+    this.view = { scale: v.scale, x: v.x - dx, y: v.y - dy };
+  }
+
   /** Zooms around a point of the view (its centre by default). */
   zoomBy(factor: number, sx = this.viewport.w / 2, sy = this.viewport.h / 2): void {
     const v = this.view;
     const scale = Math.max(0.4, Math.min(60, v.scale * factor));
     const k = scale / v.scale;
     this.view = { scale, x: sx - (sx - v.x) * k, y: sy - (sy - v.y) * k };
+  }
+
+  /** An info toast that shows only the first time (`key` is remembered in the browser storage). */
+  hintOnce(key: string, text: string): void {
+    const storeKey = 'bladepilot.hints.v1';
+    let seen: string[] = [];
+    try {
+      seen = JSON.parse(localStorage.getItem(storeKey) ?? '[]');
+      if (!Array.isArray(seen)) seen = [];
+    } catch {
+      seen = [];
+    }
+    if (seen.includes(key)) return;
+    this.toast(text, 'info');
+    try {
+      localStorage.setItem(storeKey, JSON.stringify([...seen, key]));
+    } catch {
+      // Nothing to keep it in: the hint may come again.
+    }
   }
 
   toast(text: string, kind: Toast['kind'] = 'error'): void {

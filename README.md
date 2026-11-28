@@ -35,8 +35,8 @@ line.
 ## What works today
 
 - **Desktop app:** a cutting mat with grid, rulers and cutting area; drag designs to place,
-  turn and resize them, mirror and duplicate, snap to the mat, zoom with the wheel or a pinch
-  (only the mat zooms); one pass per colour with its own tool, and sliders for force, speed and
+  turn and resize them, mirror and duplicate, snap to the mat; move the view with two fingers
+  or the right mouse button, zoom with a pinch or Ctrl and the wheel (only the mat zooms); one pass per colour with its own tool, and sliders for force, speed and
   depth that show their range; an animated preview of what the virtual plotter
   cuts; a send dialog with progress, pause, stop and tool changes. Light and dark, English
   and German, following the system.

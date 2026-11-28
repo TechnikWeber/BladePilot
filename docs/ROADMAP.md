@@ -77,6 +77,8 @@ the virtual plotter first, then checked against the real machine on a
       dark, language, where test cuts start, corrections per machine; a diagnosis to save
 - [x] Preview and Send under the machine status, the connection always in sight
 - [x] Only the mat zooms (touchpad pinch taken from WebKitGTK, Ctrl with wheel or keys)
+- [x] Navigation without a middle button: two fingers or the wheel move the view, a pinch or
+      Ctrl with the wheel zooms (switchable), the right mouse button drags the view, arrows move it
 - [x] Sliders for force, speed and depth that show their range
 - [x] Heat transfer vinyl: the mat shows the designs as they read, the job and the preview are
       mirrored; the mirror follows the material

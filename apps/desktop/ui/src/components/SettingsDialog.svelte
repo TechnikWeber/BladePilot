@@ -30,6 +30,11 @@
     app.savePrefs();
   }
 
+  function setScroll(mode: 'pan' | 'zoom'): void {
+    app.scrollMode = mode;
+    app.savePrefs();
+  }
+
   function setGrid(grid: 'auto' | 'cm' | 'in'): void {
     app.gridUnit = grid;
     app.savePrefs();
@@ -106,6 +111,14 @@
             </div>
           </div>
           <p class="hint">{t('settings.gridHint')}</p>
+          <div class="row">
+            <span>{t('settings.scroll')}</span>
+            <div class="segmented">
+              <button class:on={app.scrollMode === 'pan'} onclick={() => setScroll('pan')}>{t('settings.scrollPan')}</button>
+              <button class:on={app.scrollMode === 'zoom'} onclick={() => setScroll('zoom')}>{t('settings.scrollZoom')}</button>
+            </div>
+          </div>
+          <p class="hint">{app.scrollMode === 'pan' ? t('settings.scrollPanHint') : t('settings.scrollZoomHint')}</p>
           <div class="row">
             <span>{t('settings.theme')}</span>
             <div class="segmented">
