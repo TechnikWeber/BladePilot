@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 – 2026-11-28
+
+- The desktop AppImage carries update information and comes with a `.zsync` file: Gear Lever
+  and AppImageUpdate find new releases. AppImages before 0.7.1 have to be replaced by hand once.
+- Releases are no longer marked as pre-releases (the README's badge still says alpha), so the
+  newest one is GitHub's "latest release" that update tools ask for.
+
 ## 0.7.0 – 2026-11-28
 
 Vinyl and everyday jobs without a drawing program.

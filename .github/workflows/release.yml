@@ -166,6 +166,9 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q libwebkit2gtk-4.1-dev libxdo-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2 file
+          mkdir -p "$HOME/.local/bin" && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl -fsSL -o "$HOME/.local/bin/appimagetool" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage"
+          chmod +x "$HOME/.local/bin/appimagetool"
       - name: Front end
         working-directory: apps/desktop/ui
         run: npm ci
@@ -186,7 +189,17 @@ jobs:
           case "${{ matrix.platform }}" in
             linux)
               deb_arch=$([ "${{ matrix.arch }}" = x86_64 ] && echo amd64 || echo arm64)
-              for f in "$bundle"/appimage/*.AppImage; do cp "$f" "$out/$name-${{ matrix.arch }}.AppImage"; done
+              # Packed again with update information and a .zsync file, so AppImageUpdate and Gear
+              # Lever find new releases.
+              update="gh-releases-zsync|TechnikWeber|BladePilot|latest|BladePilot-Desktop-*-${{ matrix.arch }}.AppImage.zsync"
+              for f in "$bundle"/appimage/*.AppImage; do
+                work=$(mktemp -d)
+                src=$(realpath "$f")
+                (cd "$work" && "$src" --appimage-extract > /dev/null)
+                chmod -R a+rX "$work/squashfs-root"
+                (cd "$out" && ARCH=${{ matrix.arch }} APPIMAGE_EXTRACT_AND_RUN=1 appimagetool -u "$update" "$work/squashfs-root" "$name-${{ matrix.arch }}.AppImage")
+                test -s "$out/$name-${{ matrix.arch }}.AppImage.zsync"
+              done
               for f in "$bundle"/deb/*.deb; do cp "$f" "$out/bladepilot-desktop_${VERSION}_${deb_arch}.deb"; done
               for f in "$bundle"/rpm/*.rpm; do cp "$f" "$out/bladepilot-desktop-$VERSION-1.${{ matrix.arch }}.rpm"; done ;;
             windows)
@@ -222,6 +235,8 @@ jobs:
           test -s notes.md || echo "BladePilot $VERSION" > notes.md
       - name: Publish
         run: |
+          # Only versions with a suffix (1.0.0-rc.1) are pre-releases: the newest 0.x release has to
+          # be GitHub's "latest", or update tools (Gear Lever, AppImageUpdate) find nothing.
           flags=()
-          [[ "$VERSION" == 0.* || "$VERSION" == *-* ]] && flags+=(--prerelease)
+          [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
           gh release create "$GITHUB_REF_NAME" dist/* --title "BladePilot $VERSION" --notes-file notes.md "${flags[@]}"

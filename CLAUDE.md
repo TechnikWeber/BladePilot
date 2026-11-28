@@ -92,8 +92,10 @@ Tag `vX.Y.Z` (matching `version` in `Cargo.toml`, with a `CHANGELOG.md` section)
 tag: `.github/workflows/release.yml` builds the command line for Linux (AppImage, deb, rpm,
 tar.gz for x86_64 and aarch64), Windows (exe, zip for x86_64 and arm64) and macOS (universal
 tar.gz), and the desktop app (`BladePilot-Desktop-…` AppImage, `bladepilot-desktop` deb and rpm
-for x86_64 and aarch64, Windows setup exe and msi, universal dmg), then publishes the release;
-0.x versions are marked as pre-releases. Started by hand, the workflow only builds.
+for x86_64 and aarch64, Windows setup exe and msi, universal dmg), then publishes the release.
+Only versions with a suffix (`-rc.1`) are pre-releases: the newest release must be GitHub's
+"latest", because the AppImages' update information (`gh-releases-zsync|…|latest|…`) points
+there. Started by hand, the workflow only builds.
 
 ## Commands
 
