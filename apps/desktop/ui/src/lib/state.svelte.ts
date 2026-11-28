@@ -1200,6 +1200,8 @@ class AppState {
     if (path) this.addRecent(path);
     for (const w of opened.warnings) this.toast(w);
     this.fitRequest++;
+    // The project's machine and mat become the choice for next time too.
+    this.savePrefs();
   }
 
   /** Picks up where the last session ended (kept automatically). */
