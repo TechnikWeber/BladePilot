@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.0 – 2026-11-28
+
+Vinyl and everyday jobs without a drawing program.
+
+- **PDF and DXF:** PDF files open with the vector paths of their first page (transforms, colours,
+  forms; a white page background is left out, text and images are skipped with a note). DXF
+  drawings open with lines, polylines with arcs, circles, arcs, ellipses, splines and blocks, in
+  the drawing's units and AutoCAD colours.
+- **Text and shapes:** **Text** sets one or more lines in any installed font (bold, italic,
+  alignment, letter and line spacing); **Shape** makes a rectangle with round corners, an
+  ellipse, a polygon, a star or a heart. Both show a live preview and can be changed after they
+  are placed.
+- **Weeding:** per design a weeding box at a distance and weeding lines through the waste that
+  stop short of the design; they are a pass of their own (teal), cut after the design, with the
+  design's film settings.
+- **Copies and arranging:** add copies of a design into free spots; arrange all designs in rows
+  onto little material, smaller ones filling the gaps (inside the marks in print and cut).
+- **Heat transfer vinyl:** a switch mirrors everything across the middle of the layout; new
+  designs come mirrored while it is on.
+- **Material profiles:** each pass can start from a material (copy paper, cardstock, sticker
+  paper, vinyl, heat transfer vinyl, glitter heat transfer vinyl, pen). The values are
+  BladePilot's own starting points, to be checked with the test cut; save your own settings as a
+  material under a name. Heat transfer vinyl switches the mirror on.
+- Designs without artwork of their own (Studio files, PDF, DXF, text, shapes) print as their
+  outlines in print and cut.
+
 ## 0.6.0 – 2026-11-27
 
 Stickers: pictures, contours, and print and cut. Print and cut has not been tried on a machine

@@ -39,7 +39,7 @@ Read [docs/CLEAN-ROOM.md](docs/CLEAN-ROOM.md) before touching protocol or file-f
 | Path | What |
 |---|---|
 | `crates/machines` | Model table: USB ids, protocol generation, cutting width, mats |
-| `crates/design` | SVG, `.studio`/`.studio3` and picture import into one model (mm, y down); contours, outermost lines |
+| `crates/design` | SVG, PDF, DXF, `.studio`/`.studio3` and picture import into one model (mm, y down); text and shapes; contours, outermost lines, weeding lines |
 | `crates/job` | Flatten, place, group into passes, order, check, encode via craft-plotter |
 | `crates/sim` | Virtual plotter: parses the byte stream, answers queries, draws SVG |
 | `crates/device` | Transports (virtual; USB via nusb; Windows printer class driver) and the job protocol (`Session`) |
@@ -82,8 +82,9 @@ Decided with the maintainer; adjust details, not the direction:
 
 - Phase 2: `.studio3` beyond outlines, test documents from Silhouette Studio under Wine.
 - Phase 4: print and cut is written (desktop app); the mark search waits for a machine (T5).
-- Desktop: file associations on Windows and macOS, remember the last session, material
-  profiles per colour, a web demo with the planner in WebAssembly.
+- Desktop: file associations on Windows and macOS, remember the last session, a web demo with
+  the planner in WebAssembly. Material profiles are BladePilot's own starting values: never copy
+  the vendor's material table.
 
 ## Releases
 
@@ -108,6 +109,6 @@ npm run screenshots           # README images into docs/images (headless Chrome,
 BLESS=1 cargo test -p bladepilot-desktop   # after changing machines or the demo design: mock JSON
 ```
 
-`?demo`, `?select`, `?preview=0.6`, `?send=change|start`, `?test`, `?print`, `?lang=de` and `?theme=dark` put the
+`?demo`, `?shapes`, `?make=text|shape`, `?select`, `?preview=0.6`, `?send=change|start`, `?test`, `?print`, `?lang=de` and `?theme=dark` put the
 front end into fixed states for screenshots; in `npm run tauri dev` the variable `VITE_STATE` does the
 same inside the window (e.g. `VITE_STATE='demo&send=start'`).

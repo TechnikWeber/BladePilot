@@ -57,6 +57,14 @@ the virtual plotter first, then checked against the real machine on a
       threshold and specks ignored
 - [x] Per design: its own lines, only the outermost lines, a contour at a distance, or nothing;
       single lines clicked away on the mat
+- [x] PDF (vector paths of the first page) and DXF (lines, arcs, splines, blocks) import
+- [x] Text in the system's fonts and simple shapes (rectangle, ellipse, polygon, star, heart),
+      changeable after they are placed
+- [x] Weeding box and weeding lines per design, a pass of their own cut last
+- [x] Copies into free spots; arrange all designs onto little material (rows, first fit)
+- [x] Mirror everything for heat transfer vinyl
+- [x] Material profiles per colour: built-in starting values (BladePilot's own) and the user's
+      own, saved under a name; heat transfer vinyl switches the mirror on
 - [ ] File associations on Windows and macOS; remember the last session
 - [ ] Web demo on GitHub Pages: the front end with the planner compiled to WebAssembly
 
@@ -81,7 +89,7 @@ the virtual plotter first, then checked against the real machine on a
 
 ## Later
 
-- [ ] Material profiles with a test cut and per-machine corrections, chosen per colour
+- [ ] Per-machine corrections for material profiles; profiles for more tools
 - [ ] Long jobs on roll media without a mat, tiled when longer than the machine allows
 - [ ] Inkscape extension "Send to BladePilot"
 - [x] Bluetooth on Windows and Linux: the same GP-GL over Bluetooth Classic (RFCOMM channel 1),
@@ -91,7 +99,8 @@ the virtual plotter first, then checked against the real machine on a
       browser download (seen with 0.4.0's command line; the desktop installer got through).
       Free for open source through the SignPath Foundation, signing in the release workflow
 - [ ] Move the head with the arrow keys before a job or a test cut
-- [ ] DXF and PDF import
+- [ ] Text in the PDF import (glyph outlines); DXF text and hatches
+- [ ] Text: weld overlapping letters of script fonts into one outline
 - [ ] Cameo-only features as experimental: second tool holder, electrostatic mat
 
 ## Open points in other projects BladePilot means to solve
@@ -112,19 +121,20 @@ for everyone:
 | UI freezes while cutting | inkscape-silhouette #111 | done: the job runs on its own thread |
 | Installing the USB backend | inkscape-silhouette #349, #353, #30 | nusb needs no libusb; AppImage/RPM |
 | Open `.studio` / `.studio3` | cuthulhu #347 | done for outlines; Phase 2 |
-| Material-first profiles, test cut | cuthulhu #310 | Later |
+| Material-first profiles, test cut | cuthulhu #310 | done: material profiles per colour, test cut |
 | Pause, resume, retry a pass | cuthulhu #306 | done: pause and resume; a pass is retried by leaving the others out |
 
 ## What Silhouette Studio does that BladePilot does not (yet)
 
 From the vendor's public product information. BladePilot is cutting software: designs come
-from Inkscape or any other editor, or from Silhouette Studio files.
+from Inkscape or any other editor, or from Silhouette Studio files; text and simple shapes for
+the everyday job are made in the app.
 
 | Silhouette Studio | BladePilot |
 |---|---|
 | Test cut | done |
 | Cut by line colour; by fill colour; by layer | line colour, else fill colour: done; layers: phase 2 |
-| Material list with blade depth, force, speed and passes per material | later: own material profiles with a test cut (no vendor tables) |
+| Material list with blade depth, force, speed and passes per material | done: own starting values and own profiles, checked with the test cut (no vendor tables) |
 | Print and cut with registration marks, PixScan | registration marks: written, to be tried on a machine; PixScan: not planned |
 | Trace pictures, offset (contour) | trace from transparency or darkness, contour at a distance: done |
 | Move the blade to a start point, feed and unload from the software | later; load and unload stay on the machine's buttons |
@@ -132,9 +142,11 @@ from Inkscape or any other editor, or from Silhouette Studio files.
 | Tools: ratchet, kraft, rotary, deep-cut and punch blades, sketch pens, embossing (Curio), heat pen | blade and pen; tool-specific settings later |
 | Two tool holders, electrostatic mat (Cameo) | later, experimental |
 | Long cuts from the roll, tiling | later |
-| Weeding lines and boxes, replicate and nesting to save material | later |
+| Weeding lines and boxes, replicate and nesting to save material | done: weeding box and lines, copies, arrange in rows (no free-form nesting yet) |
+| Mirror for heat transfer vinyl | done |
+| Open PDF and DXF | done (vector paths; text in PDFs must be converted to paths) |
 | Bluetooth | Windows and Linux: done, experimental; macOS later |
-| Design tools: shapes, text, weld, knife, sketch fills | not planned; use Inkscape |
+| Design tools: shapes, text, weld, knife, sketch fills | text and simple shapes: done; weld, knife, sketch fills: not planned, use Inkscape |
 | Design store, library, cloud | out of scope |
 | Firmware updates | out of scope |
 

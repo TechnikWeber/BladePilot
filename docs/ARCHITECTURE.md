@@ -12,7 +12,7 @@
 | Crate | Job |
 |---|---|
 | `bladepilot-machines` | What each machine is: USB ids, protocol generation, holders, cutting width, longest feed, mats. |
-| `bladepilot-design` | Reads SVG with `usvg` and Silhouette Studio documents with `craft-silhouette-studio` into one model: Bézier paths in mm, `(x right, y down)` from the page's top-left corner, with outline and fill colours, and pictures with their traced edges. Flattens curves into polylines; works out contours at a distance and the outermost lines. |
+| `bladepilot-design` | Reads SVG with `usvg`, PDF with `lopdf` (a small content-stream interpreter for paths, transforms, colours and forms), DXF with `dxf` and Silhouette Studio documents with `craft-silhouette-studio` into one model: Bézier paths in mm, `(x right, y down)` from the page's top-left corner, with outline and fill colours, and pictures with their traced edges. Makes shapes and sets text with the system's fonts (through `usvg`). Flattens curves into polylines; works out contours at a distance, the outermost lines, and weeding boxes and lines that keep clear of the design. |
 | `bladepilot-job` | Turns a design into a plan: flatten within a tolerance (0.02 mm by default), move onto the mat, group into passes, order, check against the cutting area. Encodes a plan with `craft-plotter`. |
 | `bladepilot-sim` | The virtual plotter. Parses the byte stream like a machine, keeps the head position, answers queries, records cuts and lifted moves, warns, draws SVG. |
 | `bladepilot-device` | The `Transport` trait and the `Session` that runs a job: initialise, wait until ready, stream, wait for marks, wait until done. A `JobControl` pauses (at the next lifted move), resumes and stops (lift, park) a job from another thread, and the session pauses by itself before a pass that needs another tool. Transports: the virtual plotter; USB through nusb on Linux and macOS; on Windows the USB printer class driver (`usbprint.sys`), which Silhouette Studio uses too, so no driver has to be replaced. |
@@ -83,3 +83,5 @@
 | tiny-skia | BSD-3-Clause | Drawing designs for contours |
 | resvg | Apache-2.0 OR MIT | Drawing SVG artwork for the print sheet |
 | pdf-writer, miniz_oxide | MIT OR Apache-2.0 (miniz_oxide also Zlib) | The print sheet |
+| lopdf | MIT | PDF import |
+| dxf | MIT | DXF import |

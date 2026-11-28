@@ -19,8 +19,8 @@
   <a href="https://technikweber.github.io/2026/bladepilot-schneideplotter-unter-linux/"><b>Blog post (German)</b></a>
 </p>
 
-Cut on Silhouette Portrait and Cameo machines from Linux: open SVG and Silhouette Studio
-files (`.studio3`), place them on the mat and cut. A free, independent alternative to the
+Cut on Silhouette Portrait and Cameo machines from Linux: open SVG, PDF, DXF, Silhouette Studio
+files (`.studio3`) or pictures, or type a name, place them on the mat and cut. A free, independent alternative to the
 vendor software for the machines you own, written in Rust, with a desktop app and a command
 line.
 
@@ -38,9 +38,21 @@ line.
   own tool, force, speed, depth and repeats; an animated preview of what the virtual plotter
   cuts; a send dialog with progress, pause, stop and tool changes. Light and dark, English
   and German, following the system.
-- **Open designs:** SVG (text becomes outlines) and Silhouette Studio `.studio` / `.studio3`
+- **Open designs:** SVG (text becomes outlines), PDF (the vector paths of the first page, as
+  Inkscape, Illustrator or Affinity export them), DXF (lines, polylines with arcs, circles,
+  ellipses, splines, blocks, in the drawing's units) and Silhouette Studio `.studio` / `.studio3`
   files (outlines, line colours, page size). Store designs with copy protection are refused,
   never decrypted.
+- **Text and shapes:** type a text in any font installed on the system (bold, italic, several
+  lines, letter spacing), or add a rectangle with round corners, an ellipse, a polygon, a star
+  or a heart: enough for a name on a T-shirt without a drawing program. Both can be changed
+  later.
+- **Vinyl:** a weeding box around a design and weeding lines through the waste, cut last in a
+  pass of their own; a switch that mirrors everything for heat transfer vinyl; copies put into
+  free spots and **Arrange** to fit the designs onto little material.
+- **Material profiles:** starting settings for paper, cardstock, sticker paper, vinyl, heat
+  transfer vinyl and pens (BladePilot's own rough values: check them with a test cut), and
+  your own profiles saved under a name.
 - **Pictures and stickers:** open PNG, JPEG, WebP, BMP or GIF; BladePilot traces their edges
   (from transparency or from the dark parts, with a threshold and ignoring specks) and cuts
   them, or cuts a contour at a chosen distance around the whole picture.
@@ -70,8 +82,8 @@ line.
   Bluetooth Classic. No pairing and no PIN: `bladepilot devices --bluetooth` finds the machine
   and prints the command to send to it.
 
-Print and cut, more of the Silhouette Studio format and more import formats are next: see
-the [roadmap](docs/ROADMAP.md).
+Trying print and cut on a machine and more of the Silhouette Studio format are next: see the
+[roadmap](docs/ROADMAP.md).
 
 ## Desktop app
 
@@ -90,6 +102,16 @@ sheet with the registration marks, **Save the print sheet** writes the PDF to pr
 and **Send** has the machine find the marks before it cuts.
 
 ![Print and cut: stickers on an A4 sheet with registration marks, the contours in magenta](docs/images/desktop-print.png)
+
+For vinyl, **Text** and **Shape** in the toolbar make designs right in the app. In the selection
+panel a design gets a weeding box (with weeding lines through the waste) and copies; the
+arrange button fits everything onto little material. Choose a material for each colour, and
+switch on **Mirror for heat transfer vinyl** when the film is cut from the back.
+
+<p>
+  <img alt="Shapes on the mat, each in a dashed weeding box, the weeding pass listed after the black one" src="docs/images/desktop-vinyl.png" width="49%">
+  <img alt="The shape dialog: a star with its points and inner radius, the preview on the right" src="docs/images/desktop-make.png" width="49%">
+</p>
 
 The colour list holds each colour's tool and settings and remembers them for the next design.
 Dark mode follows the system:
